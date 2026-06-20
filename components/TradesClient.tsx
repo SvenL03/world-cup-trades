@@ -13,7 +13,14 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 type SortKey =
   | "label" | "side" | "category" | "shares" | "buyPrice" | "livePrice"
   | "projectedProfit" | "liveUnrealizedPL" | "myProbability" | "status"
-  | "kickoffAt";
+  | "kickoffAt" | "cost" | "margin" | "weight";
+
+/** Sort value for a column, including the computed ones. */
+function metric(t: TradeWithPL, key: SortKey): number | string | null {
+  if (key === "margin") return t.cost > 0 ? t.projectedProfit / t.cost : null;
+  if (key === "weight") return t.cost; // weight is proportional to cost
+  return (t as unknown as Record<string, unknown>)[key] as number | string | null;
+}
 
 /** Format a kickoff/resolve timestamp; supports date-only or full datetime. */
 function fmtKickoff(v: string | null): string {
@@ -71,7 +78,7 @@ export function TradesClient({
     }
     const dir = sort.desc ? -1 : 1;
     return [...rows].sort((a, b) => {
-      const av = a[sort.key], bv = b[sort.key];
+      const av = metric(a, sort.key), bv = metric(b, sort.key);
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
@@ -265,7 +272,7 @@ export function TradesClient({
 
       {/* Projections */}
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="At risk (open cost)" value={usd(sums.totalCost)} />
+        <Stat label="Total cost (at risk)" value={usd(sums.totalCost)} sub={`${sums.count} positions`} />
         <Stat label="Payout if all win" value={usd(sums.totalPayout)} tone="gold" />
         <Stat label="Projected profit" value={usd(sums.totalProjectedProfit)} tone="win" />
       </div>
@@ -291,8 +298,11 @@ export function TradesClient({
               {th("category", "Type")}
               {th("shares", "Shares", true)}
               {th("buyPrice", "Buy", true)}
+              {th("cost", "Cost", true)}
+              {th("weight", "Weight", true)}
               {th("livePrice", "Live", true)}
               {th("projectedProfit", "Proj. profit", true)}
+              {th("margin", "Margin", true)}
               {th("liveUnrealizedPL", "Live P/L", true)}
               {th("myProbability", "My %", true)}
               {th("kickoffAt", "Resolves")}
@@ -332,8 +342,15 @@ export function TradesClient({
                 <td className="px-3 py-2.5 text-xs text-muted capitalize">{t.category.replace(/_/g, " ")}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.shares.toLocaleString()}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{cents(t.buyPrice)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{t.cost > 0 ? usd(t.cost) : "—"}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-muted">
+                  {t.cost > 0 && sums.totalCost > 0 ? `${((t.cost / sums.totalCost) * 100).toFixed(1)}%` : "—"}
+                </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{cents(t.livePrice)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-win">{usd(t.projectedProfit)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-de-gold">
+                  {t.cost > 0 ? `${Math.round((t.projectedProfit / t.cost) * 100)}%` : "—"}
+                </td>
                 <td className={`px-3 py-2.5 text-right tabular-nums ${t.liveUnrealizedPL == null ? "text-muted" : t.liveUnrealizedPL >= 0 ? "text-win" : "text-loss"}`}>
                   {usd(t.liveUnrealizedPL)}
                 </td>
@@ -355,15 +372,18 @@ export function TradesClient({
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={13} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
+              <tr><td colSpan={16} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <p className="text-xs text-muted">
-        Live prices come from Kalshi + Polymarket and update every 15 min. A position shows live P/L
-        only once it&apos;s mapped to a market ticker (edit a trade to set one). Buy-ins are editable.
+      <p className="text-xs text-muted leading-relaxed">
+        <b className="text-foreground">Cost</b> = shares × buy price (what you put in). {" "}
+        <b className="text-foreground">Weight</b> = this trade&apos;s share of total cost shown. {" "}
+        <b className="text-foreground">Margin</b> = return on cost if it wins (profit ÷ cost). {" "}
+        Live prices come from Kalshi + Polymarket and auto-refresh every 15 min; live P/L shows once a
+        trade is mapped to a market (edit it to set one). Buy-ins are editable.
       </p>
 
       <TradeEditModal trade={editing} onClose={() => setEditing(null)} onSaved={() => mutate()} />
