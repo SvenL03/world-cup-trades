@@ -1,5 +1,6 @@
 import { getStandings } from "@/lib/standings";
-import { RankingsTable } from "@/components/RankingsTable";
+import { buildBracket } from "@/lib/bracket";
+import { RankingsView } from "@/components/RankingsView";
 import { Stat } from "@/components/GlowCard";
 
 export const revalidate = 600;
@@ -45,7 +46,7 @@ export default async function RankingsPage() {
               sub={new Date(data.fetchedAt).toLocaleDateString("en-US")}
             />
           </div>
-          <RankingsTable data={data.all} />
+          <RankingsView teams={data.all} bracket={buildBracket(data)} />
         </>
       )}
     </div>

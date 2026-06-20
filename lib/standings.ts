@@ -1,10 +1,22 @@
 import { flagCode, isRealTeam } from "./countries";
+import { fifaRank } from "./fifaRankings";
 import type { TeamRow } from "./types";
+
+/** A raw knockout fixture template (slots may be placeholders like "1A", "W74"). */
+export interface KnockoutTemplate {
+  num: number;
+  round: string;
+  date: string | null;
+  team1: string;
+  team2: string;
+  score?: [number, number];
+}
 
 const SOURCE_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
 interface RawMatch {
+  num?: number;
   round?: string;
   date?: string;
   time?: string;
@@ -36,6 +48,8 @@ interface Acc {
 export interface StandingsResult {
   groups: { group: string; teams: TeamRow[] }[];
   all: TeamRow[];
+  /** Knockout fixture templates (for the bracket view). */
+  knockout: KnockoutTemplate[];
   matchesPlayed: number;
   source: string;
   fetchedAt: string;
@@ -115,6 +129,9 @@ export async function getStandings(): Promise<StandingsResult> {
       code: a.code,
       name: a.name,
       group: a.group,
+      fifaRank: fifaRank(a.name),
+      overallRank: 0, // assigned after the overall sort
+      groupRank: 0, // assigned after the per-group sort
       played: a.played,
       won: a.won,
       drawn: a.drawn,
@@ -130,12 +147,17 @@ export async function getStandings(): Promise<StandingsResult> {
     };
   });
 
-  // Sort within group (Pts, GD, GF) for display; overall list sorted same.
+  // Ranking order: Points -> Goal Diff -> Goals For -> Wins -> FIFA rank (last tiebreaker).
   const cmp = (x: TeamRow, y: TeamRow) =>
     y.points - x.points ||
     y.goalDiff - x.goalDiff ||
     y.goalsFor - x.goalsFor ||
-    x.name.localeCompare(y.name);
+    y.won - x.won ||
+    x.fifaRank - y.fifaRank;
+
+  // Overall WC ranking across all teams.
+  all.sort(cmp);
+  all.forEach((t, i) => (t.overallRank = i + 1));
 
   const byGroup = new Map<string, TeamRow[]>();
   for (const t of all) {
@@ -143,12 +165,32 @@ export async function getStandings(): Promise<StandingsResult> {
     byGroup.get(t.group)!.push(t);
   }
   const groups = [...byGroup.entries()]
-    .map(([group, teams]) => ({ group, teams: teams.sort(cmp) }))
+    .map(([group, teams]) => {
+      teams.sort(cmp);
+      teams.forEach((t, i) => (t.groupRank = i + 1));
+      return { group, teams };
+    })
     .sort((a, b) => a.group.localeCompare(b.group));
+
+  // Knockout fixture templates (no group field), numbered for slot resolution.
+  const knockout: KnockoutTemplate[] = data.matches
+    .filter((m) => !m.group && m.round)
+    .map((m, i) => ({
+      num: m.num ?? i + 73, // R32 starts at match 73 in the source numbering
+      round: m.round as string,
+      date: m.date ?? null,
+      team1: m.team1,
+      team2: m.team2,
+      score:
+        m.score?.ft && m.score.ft.length === 2
+          ? [m.score.ft[0], m.score.ft[1]]
+          : undefined,
+    }));
 
   return {
     groups,
-    all: all.sort(cmp),
+    all,
+    knockout,
     matchesPlayed,
     source: SOURCE_URL,
     fetchedAt: new Date().toISOString(),

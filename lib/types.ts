@@ -56,6 +56,9 @@ export interface TeamRow {
   code: string; // ISO-ish code used for flag (e.g. "us", "de")
   name: string;
   group: string;
+  fifaRank: number; // pre-tournament FIFA ranking
+  overallRank: number; // current WC rank across all teams (1 = best)
+  groupRank: number; // 1..4 position within the group
   played: number;
   won: number;
   drawn: number;
@@ -68,4 +71,38 @@ export interface TeamRow {
   form: ("W" | "D" | "L")[]; // most recent last
   goalsPerGame: number;
   winPct: number;
+}
+
+// ---- Bracket ----
+export type BracketRound =
+  | "Round of 32"
+  | "Round of 16"
+  | "Quarter-final"
+  | "Semi-final"
+  | "Match for third place"
+  | "Final";
+
+export interface BracketSlot {
+  /** Resolved team, or null if not yet determinable. */
+  team: TeamRow | null;
+  /** Raw slot label from the source (e.g. "1A", "2B", "3A/B/C/D/F", "W74"). */
+  label: string;
+  /** True when the team is an actual result, false when projected from standings. */
+  actual: boolean;
+}
+
+export interface BracketMatch {
+  num: number;
+  round: BracketRound;
+  date: string | null;
+  home: BracketSlot;
+  away: BracketSlot;
+  /** Projected (or actual) winner that feeds the next round. */
+  winner: BracketSlot | null;
+  /** True if the winner came from a real played result. */
+  decided: boolean;
+}
+
+export interface Bracket {
+  rounds: { round: BracketRound; matches: BracketMatch[] }[];
 }

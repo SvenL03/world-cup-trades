@@ -40,6 +40,32 @@ const num = "tabular-nums text-right";
 
 const columns: ColumnDef<TeamRow>[] = [
   {
+    accessorKey: "overallRank",
+    header: "#",
+    meta: { num: true },
+    cell: ({ getValue }) => (
+      <span className="font-bold text-blue-bright tabular-nums">
+        {getValue<number>()}
+      </span>
+    ),
+  },
+  {
+    accessorKey: "fifaRank",
+    header: "FIFA",
+    meta: { num: true },
+    cell: ({ getValue }) => {
+      const v = getValue<number>();
+      return (
+        <span
+          className="inline-flex items-center justify-center min-w-[26px] px-1.5 py-0.5 rounded-md bg-surface-2 border border-border text-[11px] font-semibold tabular-nums text-muted"
+          title="Pre-tournament FIFA ranking"
+        >
+          {v >= 999 ? "—" : v}
+        </span>
+      );
+    },
+  },
+  {
     id: "team",
     header: "Team",
     accessorKey: "name",
@@ -92,7 +118,7 @@ const columns: ColumnDef<TeamRow>[] = [
 
 export function RankingsTable({ data }: { data: TeamRow[] }) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "points", desc: true },
+    { id: "overallRank", desc: false },
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [group, setGroup] = useState<string>("ALL");
@@ -176,11 +202,17 @@ export function RankingsTable({ data }: { data: TeamRow[] }) {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row, i) => (
+            {table.getRowModel().rows.map((row) => {
+              const gr = row.original.groupRank;
+              return (
               <tr
                 key={row.id}
                 className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${
-                  i < 2 ? "bg-blue/[0.04]" : ""
+                  gr === 1
+                    ? "bg-win/[0.05] shadow-[inset_3px_0_0_0_var(--win)]"
+                    : gr === 2
+                      ? "bg-blue/[0.04] shadow-[inset_3px_0_0_0_var(--blue)]"
+                      : ""
                 }`}
               >
                 {row.getVisibleCells().map((cell) => {
@@ -197,12 +229,21 @@ export function RankingsTable({ data }: { data: TeamRow[] }) {
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted">
-        Top two of each group (highlighted) advance. Click any column to sort.
+      <p className="text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-win/60 align-middle mr-1" />
+          Group winner
+        </span>
+        <span>
+          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue/60 align-middle mr-1" />
+          Runner-up (both advance)
+        </span>
+        <span>Click any column to sort. See the legend below for what each column means.</span>
       </p>
     </div>
   );
