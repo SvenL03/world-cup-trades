@@ -33,6 +33,7 @@ export function TradesClient({
 
   const [authed, setAuthed] = useState(initialAuthed);
   const [bucket, setBucket] = useState<"current" | "potential" | "all">("current");
+  const [fav, setFav] = useState<"all" | "favorites">("all");
   const [side, setSide] = useState<"all" | "for" | "against">("all");
   const [status, setStatus] = useState<"all" | "open" | "won" | "lost">("all");
   const [q, setQ] = useState("");
@@ -45,6 +46,7 @@ export function TradesClient({
   const filtered = useMemo(() => {
     let rows = trades;
     if (bucket !== "all") rows = rows.filter((t) => t.tradeType === bucket);
+    if (fav === "favorites") rows = rows.filter((t) => t.favorite);
     if (side !== "all") rows = rows.filter((t) => t.side === side);
     if (status !== "all") rows = rows.filter((t) => t.status === status);
     if (q.trim()) {
@@ -62,9 +64,10 @@ export function TradesClient({
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [trades, bucket, side, status, q, sort]);
+  }, [trades, bucket, fav, side, status, q, sort]);
 
   const sums = useMemo(() => totals(filtered), [filtered]);
+  const favCount = useMemo(() => trades.filter((t) => t.favorite).length, [trades]);
 
   async function refreshPrices() {
     setRefreshing(true);
@@ -100,6 +103,31 @@ export function TradesClient({
         (pending ? ` · ${pending} pending (markets not listed yet)` : ""),
     );
     await mutate();
+  }
+
+  async function toggleFav(t: TradeWithPL) {
+    // optimistic update
+    mutate(
+      (cur) =>
+        cur
+          ? {
+              ...cur,
+              trades: cur.trades.map((x) =>
+                x.id === t.id ? { ...x, favorite: !x.favorite } : x,
+              ),
+            }
+          : cur,
+      { revalidate: false },
+    );
+    const res = await fetch(`/api/trades/${t.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ favorite: !t.favorite }),
+    });
+    if (res.status === 401) {
+      alert("Log in to change favorites.");
+      mutate();
+    }
   }
 
   async function remove(id: number) {
@@ -203,6 +231,7 @@ export function TradesClient({
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Seg value={bucket} set={setBucket} opts={[["current", "Current"], ["potential", "Potential"], ["all", "All"]]} />
+        <Seg value={fav} set={setFav} opts={[["all", "All"], ["favorites", `★ Favorites${favCount ? ` (${favCount})` : ""}`]]} />
         <Seg value={side} set={setSide} opts={[["all", "For + Against"], ["for", "Bet for"], ["against", "Bet against"]]} />
         <Seg value={status} set={setStatus} opts={[["all", "All status"], ["open", "Open"], ["won", "Won"], ["lost", "Lost"]]} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm w-44 focus:outline-none focus:border-blue/60" />
@@ -214,6 +243,7 @@ export function TradesClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
+              <th className="px-2 py-2.5 w-8" />
               {th("label", "Position")}
               {th("side", "Side")}
               {th("category", "Type")}
@@ -229,7 +259,16 @@ export function TradesClient({
           </thead>
           <tbody>
             {filtered.map((t) => (
-              <tr key={t.id} className="border-b border-border/50 hover:bg-surface-2/60 transition-colors">
+              <tr key={t.id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${t.favorite ? "bg-de-gold/[0.04]" : ""}`}>
+                <td className="px-2 py-2.5 text-center">
+                  <button
+                    onClick={() => toggleFav(t)}
+                    title={t.favorite ? "Unfavorite" : "Add to favorites"}
+                    className={`text-base leading-none transition-colors ${t.favorite ? "text-de-gold" : "text-muted/40 hover:text-de-gold"}`}
+                  >
+                    {t.favorite ? "★" : "☆"}
+                  </button>
+                </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2.5">
                     <Flag code={t.teamCode} name={t.teamName} size={22} />
@@ -272,7 +311,7 @@ export function TradesClient({
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={11} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
+              <tr><td colSpan={12} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
             )}
           </tbody>
         </table>

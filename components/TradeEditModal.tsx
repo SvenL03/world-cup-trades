@@ -25,6 +25,7 @@ export interface TradeForm {
   side: Side;
   category: TradeCategory;
   isFirstHalf: boolean;
+  favorite: boolean;
   shares: number;
   buyPrice: number;
   status: TradeStatus;
@@ -44,6 +45,7 @@ function fromTrade(t?: TradeWithPL | null): TradeForm {
     side: t?.side ?? "for",
     category: t?.category ?? "match",
     isFirstHalf: t?.isFirstHalf ?? false,
+    favorite: t?.favorite ?? false,
     shares: t?.shares ?? 0,
     buyPrice: t?.buyPrice ?? 0,
     status: t?.status ?? "open",
@@ -210,6 +212,18 @@ export function TradeEditModal({
           <div className="col-span-2">
             <label className={lbl}>Market ticker (live price link)</label>
             <input className={field} value={form.marketTicker} onChange={(e) => set("marketTicker", e.target.value)} placeholder="kx:… or pm:… (optional)" />
+          </div>
+          <div className="col-span-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.favorite}
+                onChange={(e) => set("favorite", e.target.checked)}
+                className="accent-de-gold w-4 h-4"
+              />
+              <span className="text-de-gold">★ Favorite</span>
+              <span className="text-muted text-xs">— pin to your watchlist</span>
+            </label>
           </div>
           <div className="col-span-2">
             <label className={lbl}>Notes</label>

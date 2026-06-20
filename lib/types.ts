@@ -18,6 +18,7 @@ export interface Trade {
   side: Side;
   category: TradeCategory;
   isFirstHalf: boolean;
+  favorite: boolean;
   shares: number;
   buyPrice: number; // dollars, 0..1
   status: TradeStatus;

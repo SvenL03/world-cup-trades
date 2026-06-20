@@ -17,6 +17,7 @@ export const trades = sqliteTable("trades", {
   isFirstHalf: integer("is_first_half", { mode: "boolean" })
     .notNull()
     .default(false),
+  favorite: integer("favorite", { mode: "boolean" }).notNull().default(false),
   shares: integer("shares").notNull().default(0),
   buyPrice: real("buy_price").notNull().default(0), // dollars 0..1
   status: text("status").notNull().default("open"), // 'open' | 'won' | 'lost'

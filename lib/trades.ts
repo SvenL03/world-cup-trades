@@ -24,6 +24,7 @@ function toTrade(r: TradeRow): Trade {
     side: r.side as Side,
     category: r.category as TradeCategory,
     isFirstHalf: r.isFirstHalf,
+    favorite: r.favorite,
     shares: r.shares,
     buyPrice: r.buyPrice,
     status: r.status as TradeStatus,
