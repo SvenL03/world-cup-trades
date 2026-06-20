@@ -2,7 +2,10 @@ import { cookies } from "next/headers";
 
 export const AUTH_COOKIE = "wct_auth";
 
-const password = () => process.env.APP_PASSWORD ?? "worldcup";
+export type Role = "editor" | "viewer";
+
+const editorPw = () => process.env.APP_PASSWORD ?? "worldcup";
+const viewerPw = () => process.env.VIEW_PASSWORD ?? "view";
 const secret = () => process.env.SESSION_SECRET ?? "dev-secret-change-me";
 
 async function sha256(s: string): Promise<string> {
@@ -13,19 +16,35 @@ async function sha256(s: string): Promise<string> {
     .join("");
 }
 
-/** Token stored in the cookie after a successful login. */
-export async function authToken(): Promise<string> {
-  return sha256(`${password()}::${secret()}`);
+/** Role-specific cookie token. */
+export async function authToken(role: Role): Promise<string> {
+  const pw = role === "editor" ? editorPw() : viewerPw();
+  return sha256(`${role}::${pw}::${secret()}`);
 }
 
-export async function verifyPassword(input: string): Promise<boolean> {
-  return input === password();
+/** Map a submitted password to its role (editor checked first). */
+export function roleForPassword(input: string): Role | null {
+  if (input === editorPw()) return "editor";
+  if (input === viewerPw()) return "viewer";
+  return null;
 }
 
-/** True when the request carries a valid auth cookie. */
-export async function isAuthed(): Promise<boolean> {
+/** Role carried by the current request's cookie, or null. */
+export async function getRole(): Promise<Role | null> {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE)?.value;
-  if (!token) return false;
-  return token === (await authToken());
+  if (!token) return null;
+  if (token === (await authToken("editor"))) return "editor";
+  if (token === (await authToken("viewer"))) return "viewer";
+  return null;
+}
+
+/** Any valid session (viewer or editor) — may view. */
+export async function isAuthed(): Promise<boolean> {
+  return (await getRole()) !== null;
+}
+
+/** Editor session only — may make changes. */
+export async function canEdit(): Promise<boolean> {
+  return (await getRole()) === "editor";
 }

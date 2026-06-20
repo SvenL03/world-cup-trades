@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
-import { isAuthed } from "@/lib/auth";
+import { canEdit } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +16,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthed()))
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await canEdit()))
+    return NextResponse.json({ error: "view-only" }, { status: 403 });
 
   const { id } = await params;
   const raw = (await req.json()) as Record<string, unknown>;
@@ -37,8 +37,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await isAuthed()))
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await canEdit()))
+    return NextResponse.json({ error: "view-only" }, { status: 403 });
 
   const { id } = await params;
   await db.delete(trades).where(eq(trades.id, Number(id)));

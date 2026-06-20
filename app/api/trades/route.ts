@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { getTradesWithPL } from "@/lib/trades";
-import { isAuthed } from "@/lib/auth";
+import { canEdit, isAuthed } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +26,8 @@ function clean(body: Record<string, unknown>) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAuthed()))
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await canEdit()))
+    return NextResponse.json({ error: "view-only" }, { status: 403 });
 
   const body = clean(await req.json());
   if (!body.label) body.label = "New trade";

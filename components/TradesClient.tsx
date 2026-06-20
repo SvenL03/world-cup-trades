@@ -40,10 +40,10 @@ const badge = (cls: string) =>
 
 export function TradesClient({
   initial,
-  authed: initialAuthed,
+  canEdit: initialCanEdit,
 }: {
   initial: TradeWithPL[];
-  authed: boolean;
+  canEdit: boolean;
 }) {
   const { data, mutate, isValidating } = useSWR<{ trades: TradeWithPL[]; fetchedAt: string }>(
     "/api/trades",
@@ -52,7 +52,7 @@ export function TradesClient({
   );
   const trades = data?.trades ?? initial;
 
-  const [authed, setAuthed] = useState(initialAuthed);
+  const [authed, setAuthed] = useState(initialCanEdit);
   const [bucket, setBucket] = useState<"current" | "potential" | "all">("current");
   const [fav, setFav] = useState<"all" | "favorites">("all");
   const [side, setSide] = useState<"all" | "for" | "against">("all");
@@ -186,15 +186,24 @@ export function TradesClient({
   }
 
   async function login() {
-    const password = prompt("Enter edit password:");
+    const password = prompt("Enter the EDIT password to unlock changes:");
     if (!password) return;
     const res = await fetch("/api/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    if (res.ok) setAuthed(true);
-    else alert("Wrong password.");
+    if (!res.ok) {
+      alert("Wrong password.");
+      return;
+    }
+    const j = (await res.json()) as { canEdit?: boolean };
+    if (j.canEdit) {
+      setAuthed(true);
+      mutate();
+    } else {
+      alert("That's the view-only password — editing stays locked.");
+    }
   }
 
   const th = (key: SortKey, label: string, right = false) => (
@@ -238,9 +247,14 @@ export function TradesClient({
               </button>
             </>
           ) : (
-            <button onClick={login} className="rounded-lg border border-blue/50 px-3 py-1.5 text-sm text-blue-bright hover:bg-blue/10">
-              🔒 Log in to edit
-            </button>
+            <>
+              <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 border border-border px-2.5 py-1.5 text-sm text-muted" title="You're viewing with the read-only password">
+                👁 View-only
+              </span>
+              <button onClick={login} className="rounded-lg border border-blue/50 px-3 py-1.5 text-sm text-blue-bright hover:bg-blue/10">
+                🔒 Unlock editing
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -325,13 +339,17 @@ export function TradesClient({
             {filtered.map((t) => (
               <tr key={t.id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${t.favorite ? "bg-de-gold/[0.04]" : ""}`}>
                 <td className="px-2 py-2.5 text-center">
-                  <button
-                    onClick={() => toggleFav(t)}
-                    title={t.favorite ? "Unfavorite" : "Add to favorites"}
-                    className={`text-base leading-none transition-colors ${t.favorite ? "text-de-gold" : "text-muted/40 hover:text-de-gold"}`}
-                  >
-                    {t.favorite ? "★" : "☆"}
-                  </button>
+                  {authed ? (
+                    <button
+                      onClick={() => toggleFav(t)}
+                      title={t.favorite ? "Unfavorite" : "Add to favorites"}
+                      className={`text-base leading-none transition-colors ${t.favorite ? "text-de-gold" : "text-muted/40 hover:text-de-gold"}`}
+                    >
+                      {t.favorite ? "★" : "☆"}
+                    </button>
+                  ) : (
+                    <span className={`text-base leading-none ${t.favorite ? "text-de-gold" : "text-transparent"}`}>★</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2.5">
@@ -375,9 +393,13 @@ export function TradesClient({
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                  <button onClick={() => setEditing(t)} className="text-muted hover:text-blue-bright px-1.5" title="Edit">✎</button>
-                  {authed && (
-                    <button onClick={() => remove(t.id)} className="text-muted hover:text-loss px-1.5" title="Delete">🗑</button>
+                  {authed ? (
+                    <>
+                      <button onClick={() => setEditing(t)} className="text-muted hover:text-blue-bright px-1.5" title="Edit">✎</button>
+                      <button onClick={() => remove(t.id)} className="text-muted hover:text-loss px-1.5" title="Delete">🗑</button>
+                    </>
+                  ) : (
+                    <span className="text-muted/30 px-1.5">—</span>
                   )}
                 </td>
               </tr>
