@@ -132,9 +132,38 @@ export function buildBracket(standings: StandingsResult): Bracket {
     };
   });
 
+  // Order matches into bracket-tree order so each round lines up with its
+  // feeder matches (the source numbers matches in a non-adjacent order).
+  const tmplByNum = new Map(knockout.map((k) => [k.num, k]));
+  const childrenOf = (num: number): number[] => {
+    const k = tmplByNum.get(num);
+    if (!k) return [];
+    const out: number[] = [];
+    for (const lbl of [k.team1, k.team2]) {
+      const w = lbl.match(/^W(\d+)$/);
+      if (w) out.push(Number(w[1]));
+    }
+    return out;
+  };
+  const pos = new Map<number, number>();
+  let leaf = 0;
+  const dfs = (num: number) => {
+    const kids = childrenOf(num);
+    if (kids.length < 2) {
+      pos.set(num, leaf++); // Round-of-32 leaf
+      return;
+    }
+    dfs(kids[0]);
+    dfs(kids[1]);
+    pos.set(num, ((pos.get(kids[0]) ?? 0) + (pos.get(kids[1]) ?? 0)) / 2);
+  };
+  const finalT = knockout.find((k) => k.round === "Final");
+  if (finalT) dfs(finalT.num);
+  const order = (m: BracketMatch) => pos.get(m.num) ?? m.num;
+
   const rounds = ROUND_ORDER.map((round) => ({
     round,
-    matches: built.filter((m) => m.round === round).sort((a, b) => a.num - b.num),
+    matches: built.filter((m) => m.round === round).sort((a, b) => order(a) - order(b)),
   })).filter((r) => r.matches.length > 0);
 
   return { rounds };
