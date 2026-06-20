@@ -64,18 +64,27 @@ export function TradesClient({
   const [mapping, setMapping] = useState(false);
   const [mapMsg, setMapMsg] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
+  // Everything except the status filter — Realized P/L & Record are derived from
+  // this, so toggling Open/Won/Lost doesn't change settled (set-in-stone) results.
+  const scopedNoStatus = useMemo(() => {
     let rows = trades;
     if (bucket !== "all") rows = rows.filter((t) => t.tradeType === bucket);
     if (fav === "favorites") rows = rows.filter((t) => t.favorite);
     if (side !== "all") rows = rows.filter((t) => t.side === side);
-    if (status !== "all") rows = rows.filter((t) => t.status === status);
     if (q.trim()) {
       const s = q.toLowerCase();
       rows = rows.filter((t) =>
         [t.label, t.teamName, t.match, t.notes].some((v) => v?.toLowerCase().includes(s)),
       );
     }
+    return rows;
+  }, [trades, bucket, fav, side, q]);
+
+  const filtered = useMemo(() => {
+    const rows =
+      status === "all"
+        ? scopedNoStatus
+        : scopedNoStatus.filter((t) => t.status === status);
     const dir = sort.desc ? -1 : 1;
     return [...rows].sort((a, b) => {
       const av = metric(a, sort.key), bv = metric(b, sort.key);
@@ -85,9 +94,11 @@ export function TradesClient({
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av).localeCompare(String(bv)) * dir;
     });
-  }, [trades, bucket, fav, side, status, q, sort]);
+  }, [scopedNoStatus, status, sort]);
 
   const sums = useMemo(() => totals(filtered), [filtered]);
+  // Settled record/realized: independent of the status filter.
+  const record = useMemo(() => totals(scopedNoStatus), [scopedNoStatus]);
   const favCount = useMemo(() => trades.filter((t) => t.favorite).length, [trades]);
 
   async function refreshPrices() {
@@ -246,9 +257,9 @@ export function TradesClient({
         <Stat
           big
           label="Realized P/L (settled)"
-          value={usd(sums.realizedPL)}
-          tone={sums.realizedPL >= 0 ? "win" : "loss"}
-          sub={`${sums.won} won · ${sums.lost} lost`}
+          value={usd(record.realizedPL)}
+          tone={record.realizedPL >= 0 ? "win" : "loss"}
+          sub={`${record.won} won · ${record.lost} lost`}
         />
         <Stat
           big
@@ -261,12 +272,12 @@ export function TradesClient({
           label="Record"
           value={
             <span className="text-2xl">
-              <span className="text-win">{sums.won}W</span>{" · "}
-              <span className="text-foreground">{sums.open}O</span>{" · "}
-              <span className="text-loss">{sums.lost}L</span>
+              <span className="text-win">{record.won}W</span>{" · "}
+              <span className="text-foreground">{record.open}O</span>{" · "}
+              <span className="text-loss">{record.lost}L</span>
             </span>
           }
-          sub={`${sums.count} positions shown`}
+          sub={`${record.count} positions · ${sums.count} shown`}
         />
       </div>
 
