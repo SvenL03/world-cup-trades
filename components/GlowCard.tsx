@@ -25,11 +25,13 @@ export function Stat({
   value,
   tone = "default",
   sub,
+  big = false,
 }: {
   label: string;
   value: ReactNode;
   tone?: "default" | "win" | "loss" | "gold";
   sub?: ReactNode;
+  big?: boolean;
 }) {
   const toneClass =
     tone === "win"
@@ -40,11 +42,15 @@ export function Stat({
           ? "text-de-gold"
           : "text-foreground";
   return (
-    <GlowCard soft className="px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wider text-muted">
+    <GlowCard soft={!big} className={`px-4 py-3 ${big ? "glow-edge" : ""}`}>
+      <div className={`uppercase tracking-wider text-muted ${big ? "text-xs font-semibold" : "text-[11px]"}`}>
         {label}
       </div>
-      <div className={`text-xl font-semibold tabular-nums ${toneClass}`}>
+      <div
+        className={`font-semibold tabular-nums ${toneClass} ${
+          big ? "text-3xl sm:text-4xl glow-text" : "text-xl"
+        }`}
+      >
         {value}
       </div>
       {sub ? <div className="text-xs text-muted mt-0.5">{sub}</div> : null}

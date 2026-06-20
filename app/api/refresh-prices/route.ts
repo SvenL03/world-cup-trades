@@ -3,14 +3,15 @@ import { db } from "@/lib/db";
 import { priceSnapshots } from "@/lib/db/schema";
 import { fetchPolymarket } from "@/lib/markets/polymarket";
 import { fetchKalshi } from "@/lib/markets/kalshi";
+import { isAuthed } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
  * Snapshot current World-Cup-relevant prices from Kalshi + Polymarket.
- * Called by the GitHub Actions cron (every 15 min) and the manual refresh
- * button. If REFRESH_TOKEN is set, callers must pass ?token= or a Bearer header.
+ * Authorized either by a logged-in session (the Trades page auto-refreshes) or,
+ * for the GitHub Actions cron, by the REFRESH_TOKEN via ?token= / Bearer header.
  */
 async function refresh(req: NextRequest) {
   const required = process.env.REFRESH_TOKEN;
@@ -19,7 +20,7 @@ async function refresh(req: NextRequest) {
     const token =
       url.searchParams.get("token") ??
       req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-    if (token !== required)
+    if (token !== required && !(await isAuthed()))
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

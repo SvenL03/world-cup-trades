@@ -36,6 +36,17 @@ export interface TradeForm {
   notes: string;
 }
 
+/** Normalize a stored kickoff value to the datetime-local input format (YYYY-MM-DDTHH:mm). */
+function toLocalInput(v: string): string {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v}T00:00`; // date only
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(0, 16);
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function fromTrade(t?: TradeWithPL | null): TradeForm {
   return {
     label: t?.label ?? "",
@@ -205,8 +216,13 @@ export function TradeEditModal({
             </select>
           </div>
           <div>
-            <label className={lbl}>Kickoff (YYYY-MM-DD)</label>
-            <input className={field} value={form.kickoffAt} onChange={(e) => set("kickoffAt", e.target.value)} placeholder="2026-06-25" />
+            <label className={lbl}>Match date & time (resolves)</label>
+            <input
+              type="datetime-local"
+              className={field}
+              value={toLocalInput(form.kickoffAt)}
+              onChange={(e) => set("kickoffAt", e.target.value)}
+            />
           </div>
 
           <div className="col-span-2">

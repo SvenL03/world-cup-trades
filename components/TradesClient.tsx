@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { Flag } from "./Flag";
 import { Stat } from "./GlowCard";
@@ -12,7 +12,21 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 type SortKey =
   | "label" | "side" | "category" | "shares" | "buyPrice" | "livePrice"
-  | "projectedProfit" | "liveUnrealizedPL" | "myProbability" | "status";
+  | "projectedProfit" | "liveUnrealizedPL" | "myProbability" | "status"
+  | "kickoffAt";
+
+/** Format a kickoff/resolve timestamp; supports date-only or full datetime. */
+function fmtKickoff(v: string | null): string {
+  if (!v) return "—";
+  const d = new Date(v.length <= 10 ? `${v}T00:00:00` : v);
+  if (isNaN(d.getTime())) return v;
+  const hasTime = v.length > 10;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(hasTime ? { hour: "numeric", minute: "2-digit" } : {}),
+  });
+}
 
 const badge = (cls: string) =>
   `inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium ${cls}`;
@@ -75,6 +89,22 @@ export function TradesClient({
     await mutate();
     setRefreshing(false);
   }
+
+  // Keep prices fresh without relying on the (unreliable) GitHub cron: refresh
+  // on mount and every 15 min while the page is open, then revalidate.
+  const didInit = useRef(false);
+  useEffect(() => {
+    async function tick() {
+      await fetch("/api/refresh-prices").catch(() => {});
+      mutate();
+    }
+    if (!didInit.current) {
+      didInit.current = true;
+      tick();
+    }
+    const id = setInterval(tick, 900_000);
+    return () => clearInterval(id);
+  }, [mutate]);
 
   async function autoMap() {
     setMapping(true);
@@ -204,28 +234,40 @@ export function TradesClient({
         </div>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Stat label="At risk (cost)" value={usd(sums.totalCost)} sub={`${sums.count} positions`} />
-        <Stat label="Payout if all win" value={usd(sums.totalPayout)} tone="gold" />
-        <Stat label="Projected profit" value={usd(sums.totalProjectedProfit)} tone="win" />
+      {/* Settled money — prominent */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Stat
+          big
+          label="Realized P/L (settled)"
+          value={usd(sums.realizedPL)}
+          tone={sums.realizedPL >= 0 ? "win" : "loss"}
+          sub={`${sums.won} won · ${sums.lost} lost`}
+        />
+        <Stat
+          big
           label="Live P/L (unrealized)"
           value={usd(sums.totalLiveUnrealizedPL)}
           tone={sums.totalLiveUnrealizedPL >= 0 ? "win" : "loss"}
-          sub={sums.totalLiveValue ? `value ${usd(sums.totalLiveValue)}` : "no live prices yet"}
+          sub={sums.totalLiveValue ? `position value ${usd(sums.totalLiveValue)}` : "no live prices yet"}
         />
         <Stat
           label="Record"
           value={
-            <span className="text-base">
+            <span className="text-2xl">
               <span className="text-win">{sums.won}W</span>{" · "}
               <span className="text-foreground">{sums.open}O</span>{" · "}
               <span className="text-loss">{sums.lost}L</span>
             </span>
           }
-          sub={sums.won + sums.lost > 0 ? `realized ${usd(sums.realizedPL)}` : undefined}
+          sub={`${sums.count} positions shown`}
         />
+      </div>
+
+      {/* Projections */}
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="At risk (open cost)" value={usd(sums.totalCost)} />
+        <Stat label="Payout if all win" value={usd(sums.totalPayout)} tone="gold" />
+        <Stat label="Projected profit" value={usd(sums.totalProjectedProfit)} tone="win" />
       </div>
 
       {/* Filters */}
@@ -253,6 +295,7 @@ export function TradesClient({
               {th("projectedProfit", "Proj. profit", true)}
               {th("liveUnrealizedPL", "Live P/L", true)}
               {th("myProbability", "My %", true)}
+              {th("kickoffAt", "Resolves")}
               {th("status", "Status")}
               <th className="px-3 py-2.5" />
             </tr>
@@ -295,6 +338,7 @@ export function TradesClient({
                   {usd(t.liveUnrealizedPL)}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.myProbability == null ? "—" : `${t.myProbability}%`}</td>
+                <td className="px-3 py-2.5 text-xs text-muted whitespace-nowrap">{fmtKickoff(t.kickoffAt)}</td>
                 <td className="px-3 py-2.5">
                   <span className={badge(
                     t.status === "won" ? "bg-win/15 text-win" : t.status === "lost" ? "bg-loss/15 text-loss" : "bg-surface-2 text-muted",
@@ -311,7 +355,7 @@ export function TradesClient({
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={12} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
+              <tr><td colSpan={13} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
             )}
           </tbody>
         </table>
