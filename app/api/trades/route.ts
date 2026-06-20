@@ -7,6 +7,8 @@ import { isAuthed } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  if (!(await isAuthed()))
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const data = await getTradesWithPL();
   return NextResponse.json({ trades: data, fetchedAt: new Date().toISOString() });
 }

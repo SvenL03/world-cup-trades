@@ -13,12 +13,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "wrong password" }, { status: 401 });
 
   const res = NextResponse.json({ authed: true });
+  // Session cookie (no maxAge) -> re-enter the password once per browser session.
   res.cookies.set(AUTH_COOKIE, await authToken(), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
   });
   return res;
 }
