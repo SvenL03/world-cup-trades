@@ -1,0 +1,22 @@
+name: Refresh prediction prices
+
+# Snapshots Kalshi + Polymarket prices into the DB every 15 minutes.
+# Free alternative to a Vercel Pro cron.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit refresh endpoint
+        run: |
+          URL="${{ secrets.APP_URL }}/api/refresh-prices"
+          if [ -n "${{ secrets.REFRESH_TOKEN }}" ]; then
+            URL="$URL?token=${{ secrets.REFRESH_TOKEN }}"
+          fi
+          echo "Refreshing prices…"
+          curl -sS --fail --max-time 60 "$URL" || exit 1
