@@ -52,6 +52,8 @@ export interface StandingsResult {
   /** Knockout fixture templates (for the bracket view). */
   knockout: KnockoutTemplate[];
   matchesPlayed: number;
+  /** Outcome split of played group matches. */
+  results: { homeWin: number; draw: number; awayWin: number };
   source: string;
   fetchedAt: string;
 }
@@ -85,6 +87,7 @@ export async function getStandings(): Promise<StandingsResult> {
   };
 
   let matchesPlayed = 0;
+  const results = { homeWin: 0, draw: 0, awayWin: 0 };
 
   for (const m of data.matches) {
     // Only real group-stage games between two real nations.
@@ -111,16 +114,19 @@ export async function getStandings(): Promise<StandingsResult> {
       t2.lost += 1;
       t1.form.push("W");
       t2.form.push("L");
+      results.homeWin += 1;
     } else if (g1 < g2) {
       t2.won += 1;
       t1.lost += 1;
       t2.form.push("W");
       t1.form.push("L");
+      results.awayWin += 1;
     } else {
       t1.drawn += 1;
       t2.drawn += 1;
       t1.form.push("D");
       t2.form.push("D");
+      results.draw += 1;
     }
   }
 
@@ -194,6 +200,7 @@ export async function getStandings(): Promise<StandingsResult> {
     all,
     knockout,
     matchesPlayed,
+    results,
     source: SOURCE_URL,
     fetchedAt: new Date().toISOString(),
   };
