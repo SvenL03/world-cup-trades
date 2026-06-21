@@ -7,6 +7,7 @@ export interface KnockoutTemplate {
   num: number;
   round: string;
   date: string | null;
+  time: string | null;
   team1: string;
   team2: string;
   score?: [number, number];
@@ -179,6 +180,7 @@ export async function getStandings(): Promise<StandingsResult> {
       num: m.num ?? i + 73, // R32 starts at match 73 in the source numbering
       round: m.round as string,
       date: m.date ?? null,
+      time: m.time ?? null,
       team1: m.team1,
       team2: m.team2,
       score:

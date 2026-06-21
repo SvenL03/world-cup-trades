@@ -56,9 +56,9 @@ export function TradesClient({
   const [bucket, setBucket] = useState<"current" | "potential" | "all">("current");
   const [fav, setFav] = useState<"all" | "favorites">("all");
   const [side, setSide] = useState<"all" | "for" | "against">("all");
-  const [status, setStatus] = useState<"all" | "open" | "won" | "lost" | "settled">("all");
+  const [status, setStatus] = useState<"all" | "open" | "won" | "lost" | "settled">("open");
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "projectedProfit", desc: true });
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "kickoffAt", desc: false });
   const [editing, setEditing] = useState<TradeWithPL | null | undefined>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [mapping, setMapping] = useState(false);

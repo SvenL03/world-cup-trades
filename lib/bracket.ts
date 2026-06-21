@@ -115,6 +115,15 @@ export function buildBracket(standings: StandingsResult): Bracket {
         ROUND_ORDER.indexOf(b.round as BracketRound) || a.num - b.num,
   );
 
+  const feedersOf = (k: KnockoutTemplate): number[] => {
+    const out: number[] = [];
+    for (const lbl of [k.team1, k.team2]) {
+      const w = lbl.match(/^W(\d+)$/);
+      if (w) out.push(Number(w[1]));
+    }
+    return out;
+  };
+
   const built: BracketMatch[] = ordered.map((k: KnockoutTemplate) => {
     const home = resolveSlot(k.team1);
     const away = resolveSlot(k.team2);
@@ -125,10 +134,12 @@ export function buildBracket(standings: StandingsResult): Bracket {
       num: k.num,
       round: k.round as BracketRound,
       date: k.date,
+      time: k.time,
       home,
       away,
       winner,
       decided,
+      feeders: feedersOf(k),
     };
   });
 

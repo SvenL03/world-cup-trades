@@ -98,12 +98,15 @@ export interface BracketMatch {
   num: number;
   round: BracketRound;
   date: string | null;
+  time: string | null;
   home: BracketSlot;
   away: BracketSlot;
   /** Projected (or actual) winner that feeds the next round. */
   winner: BracketSlot | null;
   /** True if the winner came from a real played result. */
   decided: boolean;
+  /** Match numbers whose winners feed this match (empty for Round of 32). */
+  feeders: number[];
 }
 
 export interface Bracket {

@@ -8,9 +8,11 @@ import type { Bracket, TeamRow } from "@/lib/types";
 
 export function RankingsView({
   teams,
+  groups,
   bracket,
 }: {
   teams: TeamRow[];
+  groups: { group: string; teams: TeamRow[] }[];
   bracket: Bracket;
 }) {
   const [tab, setTab] = useState<"standings" | "bracket">("standings");
@@ -39,7 +41,7 @@ export function RankingsView({
           <ColumnLegend />
         </div>
       ) : (
-        <BracketView bracket={bracket} />
+        <BracketView bracket={bracket} groups={groups} />
       )}
     </div>
   );

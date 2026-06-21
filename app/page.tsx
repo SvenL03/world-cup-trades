@@ -46,7 +46,7 @@ export default async function RankingsPage() {
               sub={new Date(data.fetchedAt).toLocaleDateString("en-US")}
             />
           </div>
-          <RankingsView teams={data.all} bracket={buildBracket(data)} />
+          <RankingsView teams={data.all} groups={data.groups} bracket={buildBracket(data)} />
         </>
       )}
     </div>
