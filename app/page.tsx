@@ -39,11 +39,18 @@ export default async function RankingsPage() {
             <Stat label="Matches played" value={data.matchesPlayed} tone="gold" />
             <Stat
               label="Data updated"
-              value={new Date(data.fetchedAt).toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
+              value={
+                new Date(data.fetchedAt).toLocaleTimeString("en-US", {
+                  timeZone: "America/New_York",
+                  hour: "numeric",
+                  minute: "2-digit",
+                }) + " ET"
+              }
+              sub={new Date(data.fetchedAt).toLocaleDateString("en-US", {
+                timeZone: "America/New_York",
+                month: "short",
+                day: "numeric",
               })}
-              sub={new Date(data.fetchedAt).toLocaleDateString("en-US")}
             />
           </div>
           <RankingsView teams={data.all} groups={data.groups} bracket={buildBracket(data)} />
