@@ -46,6 +46,71 @@ interface Acc {
   form: ("W" | "D" | "L")[];
 }
 
+interface PlayedMatch {
+  group: string;
+  t1: string;
+  t2: string;
+  g1: number;
+  g2: number;
+}
+
+/**
+ * Order a group the way FIFA officially does:
+ *   1) Points  2) Goal difference (all games)  3) Goals scored (all games)
+ *   then, among teams still level, head-to-head: 4) points 5) GD 6) goals in
+ *   the matches between the tied teams.
+ * (FIFA's last resorts — fair-play points & drawing of lots — aren't in the data,
+ *  so pre-tournament FIFA ranking is the final fallback.)
+ */
+function officialGroupOrder(teams: TeamRow[], matches: PlayedMatch[]): TeamRow[] {
+  const sorted = [...teams].sort(
+    (a, b) =>
+      b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor,
+  );
+
+  // Break ties within clusters that are equal on points + GD + goals-for.
+  const out: TeamRow[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    while (
+      j < sorted.length &&
+      sorted[j].points === sorted[i].points &&
+      sorted[j].goalDiff === sorted[i].goalDiff &&
+      sorted[j].goalsFor === sorted[i].goalsFor
+    )
+      j++;
+    const cluster = sorted.slice(i, j);
+    if (cluster.length > 1) orderByHeadToHead(cluster, matches);
+    out.push(...cluster);
+    i = j;
+  }
+  return out;
+}
+
+function orderByHeadToHead(cluster: TeamRow[], matches: PlayedMatch[]) {
+  const names = new Set(cluster.map((t) => t.name));
+  const h = new Map<string, { p: number; gd: number; gf: number }>();
+  cluster.forEach((t) => h.set(t.name, { p: 0, gd: 0, gf: 0 }));
+  for (const m of matches) {
+    if (!names.has(m.t1) || !names.has(m.t2)) continue; // only matches among the tied teams
+    const a = h.get(m.t1)!;
+    const b = h.get(m.t2)!;
+    a.gf += m.g1;
+    b.gf += m.g2;
+    a.gd += m.g1 - m.g2;
+    b.gd += m.g2 - m.g1;
+    if (m.g1 > m.g2) a.p += 3;
+    else if (m.g1 < m.g2) b.p += 3;
+    else (a.p += 1), (b.p += 1);
+  }
+  cluster.sort((x, y) => {
+    const hx = h.get(x.name)!;
+    const hy = h.get(y.name)!;
+    return hy.p - hx.p || hy.gd - hx.gd || hy.gf - hx.gf || x.fifaRank - y.fifaRank;
+  });
+}
+
 export interface StandingsResult {
   groups: { group: string; teams: TeamRow[] }[];
   all: TeamRow[];
@@ -88,6 +153,7 @@ export async function getStandings(): Promise<StandingsResult> {
 
   let matchesPlayed = 0;
   const results = { homeWin: 0, draw: 0, awayWin: 0 };
+  const playedMatches: PlayedMatch[] = [];
 
   for (const m of data.matches) {
     // Only real group-stage games between two real nations.
@@ -99,6 +165,7 @@ export async function getStandings(): Promise<StandingsResult> {
     if (!ft || ft.length !== 2) continue; // unplayed
     const [g1, g2] = ft;
     matchesPlayed += 1;
+    playedMatches.push({ group: m.group, t1: m.team1, t2: m.team2, g1, g2 });
 
     t1.played += 1;
     t2.played += 1;
@@ -173,9 +240,14 @@ export async function getStandings(): Promise<StandingsResult> {
   }
   const groups = [...byGroup.entries()]
     .map(([group, teams]) => {
-      teams.sort(cmp);
-      teams.forEach((t, i) => (t.groupRank = i + 1));
-      return { group, teams };
+      // Groups follow FIFA's official tiebreakers (overall list keeps the
+      // dashboard's own ranking via `cmp`).
+      const ordered = officialGroupOrder(
+        teams,
+        playedMatches.filter((p) => p.group === group),
+      );
+      ordered.forEach((t, i) => (t.groupRank = i + 1));
+      return { group, teams: ordered };
     })
     .sort((a, b) => a.group.localeCompare(b.group));
 
