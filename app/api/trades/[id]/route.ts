@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED = new Set([
   "label", "teamCode", "teamName", "match", "side", "category",
-  "isFirstHalf", "favorite", "shares", "buyPrice", "status", "tradeType",
+  "isFirstHalf", "favorite", "shares", "buyPrice", "realizedPnl", "status", "tradeType",
   "myProbability", "marketSource", "marketTicker", "kickoffAt", "notes",
 ]);
 

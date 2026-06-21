@@ -28,6 +28,7 @@ export interface TradeForm {
   favorite: boolean;
   shares: number;
   buyPrice: number;
+  realizedPnl: number | null;
   status: TradeStatus;
   tradeType: TradeType;
   myProbability: number | null;
@@ -59,6 +60,7 @@ function fromTrade(t?: TradeWithPL | null): TradeForm {
     favorite: t?.favorite ?? false,
     shares: t?.shares ?? 0,
     buyPrice: t?.buyPrice ?? 0,
+    realizedPnl: t?.realizedPnl ?? null,
     status: t?.status ?? "open",
     tradeType: t?.tradeType ?? "current",
     myProbability: t?.myProbability ?? null,
@@ -109,6 +111,8 @@ export function TradeEditModal({
       kickoffAt: form.kickoffAt || null,
       notes: form.notes || null,
       isFirstHalf: form.category === "first_half" || form.isFirstHalf,
+      // Override only applies to settled trades.
+      realizedPnl: form.status === "open" ? null : form.realizedPnl,
     };
     const res = await fetch(
       isNew ? "/api/trades" : `/api/trades/${trade!.id}`,
@@ -207,6 +211,28 @@ export function TradeEditModal({
               <option value="lost">Lost</option>
             </select>
           </div>
+
+          {form.status !== "open" && (
+            <div className="col-span-2 rounded-lg border border-de-gold/30 bg-de-gold/[0.04] p-3">
+              <label className={lbl}>Actual P/L ($) — override</label>
+              <input
+                type="number"
+                step="0.01"
+                className={field}
+                value={form.realizedPnl ?? ""}
+                onChange={(e) => set("realizedPnl", e.target.value === "" ? null : Number(e.target.value))}
+                placeholder={
+                  form.status === "won"
+                    ? `default +${(form.shares * (1 - form.buyPrice)).toFixed(2)}`
+                    : `default -${(form.shares * form.buyPrice).toFixed(2)}`
+                }
+              />
+              <p className="text-[11px] text-muted mt-1">
+                Net dollars you actually made/lost on this game (use this if you bought &amp; sold at
+                multiple prices). Leave blank to use the default settlement shown.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className={lbl}>Bucket</label>

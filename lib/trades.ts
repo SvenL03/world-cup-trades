@@ -27,6 +27,7 @@ function toTrade(r: TradeRow): Trade {
     favorite: r.favorite,
     shares: r.shares,
     buyPrice: r.buyPrice,
+    realizedPnl: r.realizedPnl ?? null,
     status: r.status as TradeStatus,
     tradeType: r.tradeType as TradeType,
     myProbability: r.myProbability ?? null,

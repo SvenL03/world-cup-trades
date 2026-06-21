@@ -12,7 +12,7 @@ const fetcher = (u: string) => fetch(u).then((r) => r.json());
 
 type SortKey =
   | "label" | "side" | "category" | "shares" | "buyPrice" | "livePrice"
-  | "projectedProfit" | "liveUnrealizedPL" | "myProbability" | "status"
+  | "projectedProfit" | "liveUnrealizedPL" | "realizedPL" | "myProbability" | "status"
   | "kickoffAt" | "cost" | "margin" | "weight";
 
 /** Sort value for a column, including the computed ones. */
@@ -56,7 +56,7 @@ export function TradesClient({
   const [bucket, setBucket] = useState<"current" | "potential" | "all">("current");
   const [fav, setFav] = useState<"all" | "favorites">("all");
   const [side, setSide] = useState<"all" | "for" | "against">("all");
-  const [status, setStatus] = useState<"all" | "open" | "won" | "lost">("all");
+  const [status, setStatus] = useState<"all" | "open" | "won" | "lost" | "settled">("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "projectedProfit", desc: true });
   const [editing, setEditing] = useState<TradeWithPL | null | undefined>(null);
@@ -84,7 +84,9 @@ export function TradesClient({
     const rows =
       status === "all"
         ? scopedNoStatus
-        : scopedNoStatus.filter((t) => t.status === status);
+        : status === "settled"
+          ? scopedNoStatus.filter((t) => t.status !== "open")
+          : scopedNoStatus.filter((t) => t.status === status);
     const dir = sort.desc ? -1 : 1;
     return [...rows].sort((a, b) => {
       const av = metric(a, sort.key), bv = metric(b, sort.key);
@@ -273,7 +275,8 @@ export function TradesClient({
           label="Realized P/L (settled)"
           value={usd(record.realizedPL)}
           tone={record.realizedPL >= 0 ? "win" : "loss"}
-          sub={`${record.won} won · ${record.lost} lost`}
+          sub={`${record.won} won · ${record.lost} lost · click to break down`}
+          onClick={() => setStatus(status === "settled" ? "all" : "settled")}
         />
         <Stat
           big
@@ -307,7 +310,7 @@ export function TradesClient({
         <Seg value={bucket} set={setBucket} opts={[["current", "Current"], ["potential", "Potential"], ["all", "All"]]} />
         <Seg value={fav} set={setFav} opts={[["all", "All"], ["favorites", `★ Favorites${favCount ? ` (${favCount})` : ""}`]]} />
         <Seg value={side} set={setSide} opts={[["all", "For + Against"], ["for", "Bet for"], ["against", "Bet against"]]} />
-        <Seg value={status} set={setStatus} opts={[["all", "All status"], ["open", "Open"], ["won", "Won"], ["lost", "Lost"]]} />
+        <Seg value={status} set={setStatus} opts={[["all", "All status"], ["open", "Open"], ["settled", "Settled"], ["won", "Won"], ["lost", "Lost"]]} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="bg-surface border border-border rounded-lg px-3 py-1.5 text-sm w-44 focus:outline-none focus:border-blue/60" />
         <span className="ml-auto text-xs text-muted">{filtered.length} shown</span>
       </div>
@@ -329,6 +332,7 @@ export function TradesClient({
               {th("projectedProfit", "Proj. profit", true)}
               {th("margin", "Margin", true)}
               {th("liveUnrealizedPL", "Live P/L", true)}
+              {th("realizedPL", "Realized", true)}
               {th("myProbability", "My %", true)}
               {th("kickoffAt", "Resolves")}
               {th("status", "Status")}
@@ -336,7 +340,9 @@ export function TradesClient({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((t) => (
+            {filtered.map((t) => {
+              const closed = t.status === "won" || t.status === "lost";
+              return (
               <tr key={t.id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${t.favorite ? "bg-de-gold/[0.04]" : ""}`}>
                 <td className="px-2 py-2.5 text-center">
                   {authed ? (
@@ -373,15 +379,18 @@ export function TradesClient({
                 <td className="px-3 py-2.5 text-right tabular-nums">{cents(t.buyPrice)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.cost > 0 ? usd(t.cost) : "—"}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-muted">
-                  {t.cost > 0 && sums.totalCost > 0 ? `${((t.cost / sums.totalCost) * 100).toFixed(1)}%` : "—"}
+                  {!closed && t.cost > 0 && sums.totalCost > 0 ? `${((t.cost / sums.totalCost) * 100).toFixed(1)}%` : "—"}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums">{cents(t.livePrice)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-win">{usd(t.projectedProfit)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums">{closed ? "—" : cents(t.livePrice)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums text-win">{closed ? "—" : usd(t.projectedProfit)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-de-gold">
-                  {t.cost > 0 ? `${Math.round((t.projectedProfit / t.cost) * 100)}%` : "—"}
+                  {!closed && t.cost > 0 ? `${Math.round((t.projectedProfit / t.cost) * 100)}%` : "—"}
                 </td>
                 <td className={`px-3 py-2.5 text-right tabular-nums ${t.liveUnrealizedPL == null ? "text-muted" : t.liveUnrealizedPL >= 0 ? "text-win" : "text-loss"}`}>
                   {usd(t.liveUnrealizedPL)}
+                </td>
+                <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${t.realizedPL == null ? "text-muted" : t.realizedPL >= 0 ? "text-win" : "text-loss"}`}>
+                  {usd(t.realizedPL)}
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{t.myProbability == null ? "—" : `${t.myProbability}%`}</td>
                 <td className="px-3 py-2.5 text-xs text-muted whitespace-nowrap">{fmtKickoff(t.kickoffAt)}</td>
@@ -403,9 +412,10 @@ export function TradesClient({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {filtered.length === 0 && (
-              <tr><td colSpan={16} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
+              <tr><td colSpan={17} className="px-3 py-10 text-center text-muted">No trades match these filters.</td></tr>
             )}
           </tbody>
         </table>

@@ -21,6 +21,7 @@ export interface Trade {
   favorite: boolean;
   shares: number;
   buyPrice: number; // dollars, 0..1
+  realizedPnl: number | null; // actual net $ when closed (override for multi buy/sell)
   status: TradeStatus;
   tradeType: TradeType;
   myProbability: number | null; // 0..100
@@ -49,7 +50,8 @@ export interface TradeWithPL extends Trade {
   payoutIfWin: number;
   projectedProfit: number;
   liveValue: number | null;
-  liveUnrealizedPL: number | null;
+  liveUnrealizedPL: number | null; // open trades only (null once closed)
+  realizedPL: number | null; // closed trades only (override or computed settlement)
 }
 
 // ---- Standings ----

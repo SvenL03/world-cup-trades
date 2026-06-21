@@ -15,11 +15,24 @@ export function withPL(
   const cost = trade.shares * trade.buyPrice;
   const payoutIfWin = trade.shares * 1;
   const projectedProfit = payoutIfWin - cost;
+  const closed = trade.status === "won" || trade.status === "lost";
 
   const livePrice = snapshot ? snapshot.yesPrice : null;
-  const liveValue = livePrice == null ? null : trade.shares * livePrice;
+  // Once closed, there is no unrealized P/L — it's settled.
+  const liveValue = closed || livePrice == null ? null : trade.shares * livePrice;
   const liveUnrealizedPL =
-    livePrice == null ? null : trade.shares * (livePrice - trade.buyPrice);
+    closed || livePrice == null ? null : trade.shares * (livePrice - trade.buyPrice);
+
+  // Realized: prefer the user's actual-P/L override, else the binary settlement.
+  let realizedPL: number | null = null;
+  if (closed) {
+    realizedPL =
+      trade.realizedPnl != null
+        ? trade.realizedPnl
+        : trade.status === "won"
+          ? projectedProfit // shares × ($1 − buy)
+          : -cost; // lose the stake
+  }
 
   return {
     ...trade,
@@ -30,6 +43,7 @@ export function withPL(
     projectedProfit,
     liveValue,
     liveUnrealizedPL,
+    realizedPL,
   };
 }
 
@@ -62,20 +76,19 @@ export function totals(trades: TradeWithPL[]): PortfolioTotals {
   };
 
   for (const tr of trades) {
-    t.totalCost += tr.cost;
-    t.totalPayout += tr.payoutIfWin;
-    t.totalProjectedProfit += tr.projectedProfit;
-    if (tr.liveValue != null) t.totalLiveValue += tr.liveValue;
-    if (tr.liveUnrealizedPL != null) t.totalLiveUnrealizedPL += tr.liveUnrealizedPL;
-
-    if (tr.status === "won") {
-      t.won += 1;
-      t.realizedPL += tr.projectedProfit; // full payout minus cost
-    } else if (tr.status === "lost") {
-      t.lost += 1;
-      t.realizedPL -= tr.cost; // lose the stake
+    if (tr.status === "won" || tr.status === "lost") {
+      // Settled: counts toward realized only, never at-risk / unrealized.
+      if (tr.status === "won") t.won += 1;
+      else t.lost += 1;
+      if (tr.realizedPL != null) t.realizedPL += tr.realizedPL;
     } else {
+      // Open: at-risk cost, projections, and unrealized P/L.
       t.open += 1;
+      t.totalCost += tr.cost;
+      t.totalPayout += tr.payoutIfWin;
+      t.totalProjectedProfit += tr.projectedProfit;
+      if (tr.liveValue != null) t.totalLiveValue += tr.liveValue;
+      if (tr.liveUnrealizedPL != null) t.totalLiveUnrealizedPL += tr.liveUnrealizedPL;
     }
   }
   return t;

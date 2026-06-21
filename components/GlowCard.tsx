@@ -26,12 +26,14 @@ export function Stat({
   tone = "default",
   sub,
   big = false,
+  onClick,
 }: {
   label: string;
   value: ReactNode;
   tone?: "default" | "win" | "loss" | "gold";
   sub?: ReactNode;
   big?: boolean;
+  onClick?: () => void;
 }) {
   const toneClass =
     tone === "win"
@@ -42,7 +44,17 @@ export function Stat({
           ? "text-de-gold"
           : "text-foreground";
   return (
-    <GlowCard soft={!big} className={`px-4 py-3 ${big ? "glow-edge" : ""}`}>
+    <GlowCard
+      soft={!big}
+      className={`px-4 py-3 ${big ? "glow-edge" : ""} ${
+        onClick ? "cursor-pointer hover:brightness-125 transition" : ""
+      }`}
+    >
+      <div
+        onClick={onClick}
+        role={onClick ? "button" : undefined}
+        className={onClick ? "outline-none" : ""}
+      >
       <div className={`uppercase tracking-wider text-muted ${big ? "text-xs font-semibold" : "text-[11px]"}`}>
         {label}
       </div>
@@ -54,6 +66,7 @@ export function Stat({
         {value}
       </div>
       {sub ? <div className="text-xs text-muted mt-0.5">{sub}</div> : null}
+      </div>
     </GlowCard>
   );
 }

@@ -20,6 +20,7 @@ export const trades = sqliteTable("trades", {
   favorite: integer("favorite", { mode: "boolean" }).notNull().default(false),
   shares: integer("shares").notNull().default(0),
   buyPrice: real("buy_price").notNull().default(0), // dollars 0..1
+  realizedPnl: real("realized_pnl"), // actual net $ when closed (override; handles multi buy/sell)
   status: text("status").notNull().default("open"), // 'open' | 'won' | 'lost'
   tradeType: text("trade_type").notNull().default("current"), // 'current' | 'potential'
   myProbability: integer("my_probability"), // 0..100
