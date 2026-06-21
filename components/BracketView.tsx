@@ -6,16 +6,21 @@ import { formatET } from "@/lib/datetime";
 import type { Bracket, BracketMatch, BracketRound, BracketSlot, TeamRow } from "@/lib/types";
 
 type Conn = { src: string; dst: string; kind: "group" | "tree"; group?: string };
-type Line = { d: string; kind: Conn["kind"]; group?: string };
+type Line = { d: string; kind: Conn["kind"]; src: string; dst: string; group?: string };
+type Selected = { kind: "group"; id: string } | { kind: "match"; id: number } | null;
 
 const groupLetter = (g: string) => g.replace("Group ", "");
 
-/** Which group + position an R32 slot is fed by. */
+/** Match number referenced by a "match:N" or "slot:N:side" key. */
+function keyNum(k: string): number {
+  const p = k.split(":");
+  return Number(p[1]);
+}
+
 function sourceOf(slot: BracketSlot): { letter: string; rank: number } | null {
   const m = slot.label.match(/^([12])([A-L])$/);
   if (m) return { letter: m[2], rank: Number(m[1]) };
-  if (/^3/.test(slot.label) && slot.team)
-    return { letter: groupLetter(slot.team.group), rank: 3 };
+  if (/^3/.test(slot.label) && slot.team) return { letter: groupLetter(slot.team.group), rank: 3 };
   if (slot.team) return { letter: groupLetter(slot.team.group), rank: slot.team.groupRank };
   return null;
 }
@@ -38,7 +43,7 @@ export function BracketView({
   const nodes = useRef(new Map<string, HTMLElement>());
   const [lines, setLines] = useState<Line[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Selected>(null);
 
   const reg = useCallback(
     (key: string) => (el: HTMLElement | null) => {
@@ -51,8 +56,9 @@ export function BracketView({
   const treeRounds = bracket.rounds.filter((r) => r.round !== "Match for third place");
   const thirdPlace = bracket.rounds.find((r) => r.round === "Match for third place");
 
-  // Build the connection list (group→R32 + each feeder→match).
+  // Connections: group → R32 slot, and each feeder match → its parent match.
   const connections: Conn[] = [];
+  const feedersMap = new Map<number, number[]>();
   const r32 = bracket.rounds.find((r) => r.round === "Round of 32")?.matches ?? [];
   const qualifyingThirds = new Set<string>();
   for (const m of r32) {
@@ -64,15 +70,45 @@ export function BracketView({
     }
   }
   for (const r of bracket.rounds)
-    for (const m of r.matches)
+    for (const m of r.matches) {
+      feedersMap.set(m.num, m.feeders);
       for (const f of m.feeders)
         connections.push({ src: `match:${f}`, dst: `match:${m.num}`, kind: "tree" });
+    }
 
-  // R32 slots fed by the currently-selected group (for highlighting).
-  const highlightedDst = new Set<string>();
-  if (selectedGroup)
+  // ---- Highlight sets based on the current selection ----
+  const litLines = new Set<string>(); // `${src}|${dst}`
+  const litSlots = new Set<string>(); // `slot:N:side`
+  const litMatches = new Set<number>();
+  const litLetters = new Set<string>();
+
+  if (selected?.kind === "group") {
+    litLetters.add(selected.id);
     for (const c of connections)
-      if (c.group === selectedGroup) highlightedDst.add(c.dst);
+      if (c.kind === "group" && c.group === selected.id) {
+        litLines.add(`${c.src}|${c.dst}`);
+        litSlots.add(c.dst);
+        litMatches.add(keyNum(c.dst));
+      }
+  } else if (selected?.kind === "match") {
+    // Walk backwards through feeders to the group stage.
+    const path = new Set<number>([selected.id]);
+    const stack = [selected.id];
+    while (stack.length) {
+      const n = stack.pop()!;
+      for (const f of feedersMap.get(n) ?? []) if (!path.has(f)) (path.add(f), stack.push(f));
+    }
+    path.forEach((n) => litMatches.add(n));
+    for (const c of connections) {
+      if (path.has(keyNum(c.dst))) {
+        litLines.add(`${c.src}|${c.dst}`);
+        if (c.kind === "group") {
+          litSlots.add(c.dst);
+          if (c.group) litLetters.add(c.group);
+        }
+      }
+    }
+  }
 
   const recompute = useCallback(() => {
     const c = containerRef.current;
@@ -90,9 +126,15 @@ export function BracketView({
       const y1 = sr.top - cr.top + sr.height / 2;
       const x2 = dr.left - cr.left;
       const y2 = dr.top - cr.top + dr.height / 2;
-      if (x2 < x1) continue; // skip backward/degenerate
+      if (x2 < x1) continue;
       const dx = Math.max(24, (x2 - x1) / 2);
-      out.push({ d: `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`, kind: conn.kind, group: conn.group });
+      out.push({
+        d: `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`,
+        kind: conn.kind,
+        src: conn.src,
+        dst: conn.dst,
+        group: conn.group,
+      });
     }
     setLines(out);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,7 +142,7 @@ export function BracketView({
 
   useLayoutEffect(() => {
     recompute();
-    const t = setTimeout(recompute, 400); // after flags/fonts settle
+    const t = setTimeout(recompute, 400);
     const ro = new ResizeObserver(recompute);
     if (containerRef.current) ro.observe(containerRef.current);
     window.addEventListener("resize", recompute);
@@ -111,20 +153,18 @@ export function BracketView({
     };
   }, [recompute]);
 
+  const active = !!selected;
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl glow-edge-soft bg-surface px-4 py-3 text-sm text-muted">
         Projected from current standings, in <span className="text-foreground">Eastern Time</span>.
-        Grey lines trace how each group&apos;s <span className="text-foreground">top two</span> and the
-        eight best <span className="text-foreground">third-placed</span> teams flow into the Round of 32;
-        later rounds advance the higher-ranked team (#WC rank). Real results replace projections as games finish.
-        {" "}
-        <span className="text-blue-bright">Click a group to light up where its teams go.</span>
-        {selectedGroup && (
-          <button
-            onClick={() => setSelectedGroup(null)}
-            className="ml-2 underline text-muted hover:text-foreground"
-          >
+        Grey lines trace how each group&apos;s top two and the eight best third-placed teams flow into
+        the bracket. <span className="text-blue-bright">Click a group</span> to light up where it goes,
+        or <span className="text-blue-bright">click any match</span> to chart every path leading into it
+        (click the Final to see them all). Real scores show as games are played.
+        {selected && (
+          <button onClick={() => setSelected(null)} className="ml-2 underline text-muted hover:text-foreground">
             clear
           </button>
         )}
@@ -132,68 +172,55 @@ export function BracketView({
 
       <div className="overflow-x-auto pb-4">
         <div ref={containerRef} className="relative flex gap-6 items-stretch min-w-max min-h-[760px]">
-          {/* flow lines */}
-          <svg
-            className="absolute inset-0 pointer-events-none z-0"
-            width={size.w}
-            height={size.h}
-          >
-            {(selectedGroup
-              ? [...lines].sort((a, b) => (a.group === selectedGroup ? 1 : 0) - (b.group === selectedGroup ? 1 : 0))
+          <svg className="absolute inset-0 pointer-events-none z-0" width={size.w} height={size.h}>
+            {(active
+              ? [...lines].sort((a, b) =>
+                  (litLines.has(`${a.src}|${a.dst}`) ? 1 : 0) - (litLines.has(`${b.src}|${b.dst}`) ? 1 : 0),
+                )
               : lines
             ).map((l, i) => {
-              const active = !!selectedGroup && l.group === selectedGroup;
-              const dimmed = !!selectedGroup && !active;
-              const stroke = active
+              const lit = litLines.has(`${l.src}|${l.dst}`);
+              const stroke = lit
                 ? "#5ec2ff"
-                : dimmed
+                : active
                   ? "rgba(170,182,205,0.06)"
                   : l.kind === "group"
                     ? "rgba(170,182,205,0.22)"
                     : "rgba(120,170,235,0.30)";
-              return (
-                <path
-                  key={i}
-                  d={l.d}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={active ? 2.2 : 1.25}
-                />
-              );
+              return <path key={i} d={l.d} fill="none" stroke={stroke} strokeWidth={lit ? 2.2 : 1.25} />;
             })}
           </svg>
 
           {/* Group stage */}
           <div className="relative z-10 flex flex-col gap-2 w-[178px]">
-            <div className="text-xs uppercase tracking-wider text-blue-bright font-semibold">
-              Group stage
-            </div>
+            <div className="text-xs uppercase tracking-wider text-blue-bright font-semibold">Group stage</div>
             {groups.map((g) => {
               const letter = groupLetter(g.group);
-              const sel = selectedGroup === letter;
+              const lit = litLetters.has(letter);
               return (
                 <div
                   key={g.group}
-                  onClick={() => setSelectedGroup(sel ? null : letter)}
+                  onClick={() =>
+                    setSelected(selected?.kind === "group" && selected.id === letter ? null : { kind: "group", id: letter })
+                  }
                   className={`rounded-lg bg-surface border overflow-hidden cursor-pointer transition ${
-                    sel ? "border-blue-bright glow-edge" : "border-border hover:border-blue/40"
+                    lit ? "border-blue-bright glow-edge" : "border-border hover:border-blue/40"
                   }`}
                 >
                   <div className="px-2 py-1 text-[11px] font-semibold text-muted border-b border-border/60 flex items-center justify-between">
                     <span>Group {letter}</span>
-                    <span className="text-blue-bright/70 text-[9px]">{sel ? "● tracing" : "tap"}</span>
+                    <span className="text-blue-bright/70 text-[9px]">
+                      {selected?.kind === "group" && selected.id === letter ? "● tracing" : "tap"}
+                    </span>
                   </div>
                   {g.teams.map((t) => {
                     const rank = t.groupRank;
-                    const qualifies =
-                      rank <= 2 || (rank === 3 && qualifyingThirds.has(t.name));
+                    const qualifies = rank <= 2 || (rank === 3 && qualifyingThirds.has(t.name));
                     return (
                       <div
                         key={t.name}
                         ref={reg(`pos:${letter}:${rank}`)}
-                        className={`flex items-center gap-1.5 px-2 py-1 text-xs ${
-                          qualifies ? "" : "opacity-40"
-                        }`}
+                        className={`flex items-center gap-1.5 px-2 py-1 text-xs ${qualifies ? "" : "opacity-40"}`}
                       >
                         <span
                           className={`w-3.5 text-[10px] tabular-nums ${
@@ -229,17 +256,32 @@ export function BracketView({
               </div>
               <div className="flex flex-col justify-around flex-1 gap-3">
                 {r.matches.map((m) => (
-                  <MatchCard key={m.num} m={m} round={r.round} reg={reg} highlight={highlightedDst} />
+                  <MatchCard
+                    key={m.num}
+                    m={m}
+                    round={r.round}
+                    reg={reg}
+                    litSlots={litSlots}
+                    lit={litMatches.has(m.num)}
+                    onSelect={() => setSelected(selected?.kind === "match" && selected.id === m.num ? null : { kind: "match", id: m.num })}
+                  />
                 ))}
               </div>
-              {/* 3rd-place playoff tucked under the Final column */}
               {r.round === "Final" && thirdPlace && (
                 <div className="mt-4">
                   <div className="text-[11px] uppercase tracking-wider text-de-gold font-semibold mb-1.5">
                     3rd-place playoff
                   </div>
                   {thirdPlace.matches.map((m) => (
-                    <MatchCard key={m.num} m={m} round={m.round} reg={reg} highlight={highlightedDst} />
+                    <MatchCard
+                      key={m.num}
+                      m={m}
+                      round={m.round}
+                      reg={reg}
+                      litSlots={litSlots}
+                      lit={litMatches.has(m.num)}
+                      onSelect={() => setSelected(selected?.kind === "match" && selected.id === m.num ? null : { kind: "match", id: m.num })}
+                    />
                   ))}
                 </div>
               )}
@@ -258,7 +300,8 @@ function SlotRow({
   winner,
   showOrigin,
   reg,
-  highlight,
+  litSlots,
+  goals,
 }: {
   slot: BracketSlot;
   side: "home" | "away";
@@ -266,11 +309,12 @@ function SlotRow({
   winner: boolean;
   showOrigin: boolean;
   reg: (k: string) => (el: HTMLElement | null) => void;
-  highlight?: Set<string>;
+  litSlots?: Set<string>;
+  goals: number | null;
 }) {
   const t = slot.team;
   const origin = showOrigin ? originBadge(slot.label) : null;
-  const lit = highlight?.has(`slot:${num}:${side}`);
+  const lit = litSlots?.has(`slot:${num}:${side}`);
   return (
     <div
       ref={reg(`slot:${num}:${side}`)}
@@ -289,9 +333,13 @@ function SlotRow({
               {origin}
             </span>
           )}
-          <span className="ml-auto pl-1 text-[10px] text-muted tabular-nums">
-            {winner && "✓ "}#{t.overallRank}
-          </span>
+          {goals != null ? (
+            <span className={`ml-auto pl-1 tabular-nums font-bold ${winner ? "text-foreground" : "text-muted"}`}>
+              {goals}
+            </span>
+          ) : (
+            <span className="ml-auto pl-1 text-[10px] text-muted tabular-nums">#{t.overallRank}</span>
+          )}
         </>
       ) : (
         <span className="text-sm text-muted/60 italic">{slot.label}</span>
@@ -304,12 +352,16 @@ function MatchCard({
   m,
   round,
   reg,
-  highlight,
+  litSlots,
+  lit,
+  onSelect,
 }: {
   m: BracketMatch;
   round: BracketRound;
   reg: (k: string) => (el: HTMLElement | null) => void;
-  highlight?: Set<string>;
+  litSlots?: Set<string>;
+  lit?: boolean;
+  onSelect?: () => void;
 }) {
   const homeWins = !!(m.winner?.team && m.winner.team === m.home.team);
   const awayWins = !!(m.winner?.team && m.winner.team === m.away.team);
@@ -317,10 +369,13 @@ function MatchCard({
   return (
     <div
       ref={reg(`match:${m.num}`)}
-      className="rounded-lg bg-surface border border-border overflow-hidden w-[210px] divide-y divide-border/60 shrink-0"
+      onClick={onSelect}
+      className={`rounded-lg bg-surface border overflow-hidden w-[210px] divide-y divide-border/60 shrink-0 cursor-pointer transition ${
+        lit ? "border-blue-bright glow-edge" : "border-border hover:border-blue/40"
+      }`}
     >
-      <SlotRow slot={m.home} side="home" num={m.num} winner={homeWins} showOrigin={showOrigin} reg={reg} highlight={highlight} />
-      <SlotRow slot={m.away} side="away" num={m.num} winner={awayWins} showOrigin={showOrigin} reg={reg} highlight={highlight} />
+      <SlotRow slot={m.home} side="home" num={m.num} winner={homeWins} showOrigin={showOrigin} reg={reg} litSlots={litSlots} goals={m.score ? m.score[0] : null} />
+      <SlotRow slot={m.away} side="away" num={m.num} winner={awayWins} showOrigin={showOrigin} reg={reg} litSlots={litSlots} goals={m.score ? m.score[1] : null} />
       <div className="px-2 py-1 text-[10px] text-muted/70 flex items-center justify-between">
         <span>{formatET(m.date, m.time)}</span>
         <span className={m.decided ? "text-win" : ""}>{m.decided ? "final" : "projected"}</span>

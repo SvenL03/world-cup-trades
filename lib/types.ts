@@ -99,6 +99,7 @@ export interface BracketMatch {
   round: BracketRound;
   date: string | null;
   time: string | null;
+  score: [number, number] | null; // actual full-time score once played
   home: BracketSlot;
   away: BracketSlot;
   /** Projected (or actual) winner that feeds the next round. */

@@ -135,6 +135,7 @@ export function buildBracket(standings: StandingsResult): Bracket {
       round: k.round as BracketRound,
       date: k.date,
       time: k.time,
+      score: k.score ?? null,
       home,
       away,
       winner,
