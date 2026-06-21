@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Flag } from "./Flag";
 import { formatET } from "@/lib/datetime";
 import type { Bracket, BracketMatch, BracketRound, BracketSlot, TeamRow } from "@/lib/types";
@@ -10,6 +10,12 @@ type Line = { d: string; kind: Conn["kind"]; src: string; dst: string; group?: s
 type Selected = { kind: "group"; id: string } | { kind: "match"; id: number } | null;
 
 const groupLetter = (g: string) => g.replace("Group ", "");
+
+/** Start zoomed out on small screens so the whole bracket is reachable. */
+function initialScale(): number {
+  if (typeof window !== "undefined" && window.innerWidth < 700) return 0.45;
+  return 1;
+}
 
 /** Match number referenced by a "match:N" or "slot:N:side" key. */
 function keyNum(k: string): number {
@@ -44,6 +50,78 @@ export function BracketView({
   const [lines, setLines] = useState<Line[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [selected, setSelected] = useState<Selected>(null);
+
+  // ---- Zoom & pan ----
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+  const [tx, setTx] = useState(0);
+  const [ty, setTy] = useState(0);
+  const sRef = useRef(1);
+  const xRef = useRef(0);
+  const yRef = useRef(0);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchDist = useRef<number | null>(null);
+  const dragMoved = useRef(false);
+
+  const apply = (s: number, x: number, y: number) => {
+    sRef.current = s;
+    xRef.current = x;
+    yRef.current = y;
+    setScale(s);
+    setTx(x);
+    setTy(y);
+  };
+  const clampScale = (s: number) => Math.min(2.6, Math.max(0.3, s));
+  const surfacePoint = (e: { clientX: number; clientY: number }) => {
+    const r = surfaceRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const zoomAround = (px: number, py: number, factor: number) => {
+    const s = sRef.current;
+    const ns = clampScale(s * factor);
+    const f = ns / s;
+    apply(ns, px - (px - xRef.current) * f, py - (py - yRef.current) * f);
+  };
+  const zoomCenter = (factor: number) => {
+    const r = surfaceRef.current?.getBoundingClientRect();
+    zoomAround((r?.width ?? 0) / 2, (r?.height ?? 0) / 2, factor);
+  };
+  const resetView = () => apply(initialScale(), 0, 0);
+
+  function onPointerDown(e: React.PointerEvent) {
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    pointers.current.set(e.pointerId, surfacePoint(e));
+    pinchDist.current = null;
+    dragMoved.current = false;
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!pointers.current.has(e.pointerId)) return;
+    const p = surfacePoint(e);
+    const prev = pointers.current.get(e.pointerId)!;
+    pointers.current.set(e.pointerId, p);
+    const pts = [...pointers.current.values()];
+    if (pts.length === 1) {
+      if (Math.hypot(p.x - prev.x, p.y - prev.y) > 1) dragMoved.current = true;
+      apply(sRef.current, xRef.current + (p.x - prev.x), yRef.current + (p.y - prev.y));
+    } else if (pts.length >= 2) {
+      dragMoved.current = true;
+      const [a, b] = pts;
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (pinchDist.current) zoomAround(mid.x, mid.y, dist / pinchDist.current);
+      pinchDist.current = dist;
+    }
+  }
+  function onPointerUp(e: React.PointerEvent) {
+    pointers.current.delete(e.pointerId);
+    pinchDist.current = null;
+  }
+  function onWheel(e: React.WheelEvent) {
+    if (!e.ctrlKey) return; // trackpad pinch / ctrl+wheel only; plain scroll passes through
+    e.preventDefault();
+    const p = surfacePoint(e);
+    zoomAround(p.x, p.y, e.deltaY < 0 ? 1.12 : 0.89);
+  }
 
   const reg = useCallback(
     (key: string) => (el: HTMLElement | null) => {
@@ -143,10 +221,11 @@ export function BracketView({
       if (!s || !d) continue;
       const sr = s.getBoundingClientRect();
       const dr = d.getBoundingClientRect();
-      const x1 = sr.right - cr.left;
-      const y1 = sr.top - cr.top + sr.height / 2;
-      const x2 = dr.left - cr.left;
-      const y2 = dr.top - cr.top + dr.height / 2;
+      const z = sRef.current || 1; // rects are scaled by the zoom transform
+      const x1 = (sr.right - cr.left) / z;
+      const y1 = (sr.top - cr.top) / z + sr.height / z / 2;
+      const x2 = (dr.left - cr.left) / z;
+      const y2 = (dr.top - cr.top) / z + dr.height / z / 2;
       if (x2 < x1) continue;
       const dx = Math.max(24, (x2 - x1) / 2);
       out.push({
@@ -174,9 +253,21 @@ export function BracketView({
     };
   }, [recompute]);
 
+  // Start zoomed out on small screens.
+  useEffect(() => {
+    apply(initialScale(), 0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const active = !!selected;
-  const selectMatch = (num: number) =>
+  const selectMatch = (num: number) => {
+    if (dragMoved.current) return; // ignore clicks that were really a pan
     setSelected(selected?.kind === "match" && selected.id === num ? null : { kind: "match", id: num });
+  };
+  const selectGroup = (letter: string) => {
+    if (dragMoved.current) return;
+    setSelected(selected?.kind === "group" && selected.id === letter ? null : { kind: "group", id: letter });
+  };
 
   return (
     <div className="space-y-4">
@@ -185,7 +276,8 @@ export function BracketView({
         Grey lines trace how each group&apos;s top two and the eight best third-placed teams flow into
         the bracket. <span className="text-blue-bright">Click a group</span> to light up where it goes,
         or <span className="text-blue-bright">click any match</span> to chart every path leading into it
-        (click the Final to see them all). Real scores show as games are played.
+        (click the Final to see them all). Real scores show as games are played.{" "}
+        <span className="text-muted/80">Pinch or ⌘/Ctrl-scroll to zoom, drag to pan.</span>
         {selected && (
           <button onClick={() => setSelected(null)} className="ml-2 underline text-muted hover:text-foreground">
             clear
@@ -193,8 +285,27 @@ export function BracketView({
         )}
       </div>
 
-      <div className="overflow-x-auto pb-4">
-        <div ref={containerRef} className="relative flex gap-6 items-stretch min-w-max min-h-[760px]">
+      <div className="relative">
+        {/* zoom controls */}
+        <div className="absolute top-2 right-2 z-20 flex items-center gap-1 rounded-lg bg-surface/90 border border-border p-1 backdrop-blur">
+          <button onClick={() => zoomCenter(0.83)} className="w-7 h-7 rounded-md hover:bg-surface-2 text-foreground" title="Zoom out">−</button>
+          <span className="text-[11px] text-muted tabular-nums w-9 text-center">{Math.round(scale * 100)}%</span>
+          <button onClick={() => zoomCenter(1.2)} className="w-7 h-7 rounded-md hover:bg-surface-2 text-foreground" title="Zoom in">+</button>
+          <button onClick={resetView} className="px-2 h-7 rounded-md hover:bg-surface-2 text-xs text-muted" title="Reset view">fit</button>
+        </div>
+
+        <div
+          ref={surfaceRef}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onWheel={onWheel}
+          className="overflow-hidden rounded-xl border border-border bg-surface/30 h-[72vh] min-h-[420px] cursor-grab active:cursor-grabbing"
+          style={{ touchAction: "none" }}
+        >
+          <div style={{ transform: `translate(${tx}px, ${ty}px) scale(${scale})`, transformOrigin: "0 0", width: "max-content" }}>
+            <div ref={containerRef} className="relative flex gap-6 items-stretch min-w-max min-h-[760px] p-3">
           <svg className="absolute inset-0 pointer-events-none z-0" width={size.w} height={size.h}>
             {(active
               ? [...lines].sort((a, b) =>
@@ -223,9 +334,7 @@ export function BracketView({
               return (
                 <div
                   key={g.group}
-                  onClick={() =>
-                    setSelected(selected?.kind === "group" && selected.id === letter ? null : { kind: "group", id: letter })
-                  }
+                  onClick={() => selectGroup(letter)}
                   className={`rounded-lg bg-surface border overflow-hidden cursor-pointer transition ${
                     lit ? "border-blue-bright glow-edge" : "border-border hover:border-blue/40"
                   }`}
@@ -318,6 +427,8 @@ export function BracketView({
             }
             return [col];
           })}
+            </div>
+          </div>
         </div>
       </div>
     </div>
