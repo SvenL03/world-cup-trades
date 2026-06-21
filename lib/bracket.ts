@@ -118,7 +118,8 @@ export function buildBracket(standings: StandingsResult): Bracket {
   const feedersOf = (k: KnockoutTemplate): number[] => {
     const out: number[] = [];
     for (const lbl of [k.team1, k.team2]) {
-      const w = lbl.match(/^W(\d+)$/);
+      // Winner-feeders (W..) and, for the 3rd-place game, loser-feeders (L..).
+      const w = lbl.match(/^[WL](\d+)$/);
       if (w) out.push(Number(w[1]));
     }
     return out;

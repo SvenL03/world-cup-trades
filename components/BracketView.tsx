@@ -58,7 +58,7 @@ export function BracketView({
 
   // Connections: group → R32 slot, and each feeder match → its parent match.
   const connections: Conn[] = [];
-  const feedersMap = new Map<number, number[]>();
+  const matchByNum = new Map<number, BracketMatch>();
   const r32 = bracket.rounds.find((r) => r.round === "Round of 32")?.matches ?? [];
   const qualifyingThirds = new Set<string>();
   for (const m of r32) {
@@ -71,16 +71,48 @@ export function BracketView({
   }
   for (const r of bracket.rounds)
     for (const m of r.matches) {
-      feedersMap.set(m.num, m.feeders);
+      matchByNum.set(m.num, m);
       for (const f of m.feeders)
         connections.push({ src: `match:${f}`, dst: `match:${m.num}`, kind: "tree" });
     }
+  const groupConnByDst = new Map<string, Conn>();
+  for (const c of connections) if (c.kind === "group") groupConnByDst.set(c.dst, c);
 
   // ---- Highlight sets based on the current selection ----
   const litLines = new Set<string>(); // `${src}|${dst}`
   const litSlots = new Set<string>(); // `slot:N:side`
   const litMatches = new Set<number>();
   const litLetters = new Set<string>();
+
+  // Trace ONE team's single path back from match `num` to its group position.
+  const traceTeam = (num: number, team: TeamRow | null) => {
+    if (!team) return;
+    const m = matchByNum.get(num);
+    if (!m) return;
+    litMatches.add(num);
+    const side = m.home.team === team ? "home" : m.away.team === team ? "away" : null;
+    if (!side) return;
+    litSlots.add(`slot:${num}:${side}`);
+    if (m.feeders.length === 0) {
+      // Round of 32 — connect back to the group position that supplied it.
+      const gc = groupConnByDst.get(`slot:${num}:${side}`);
+      if (gc) {
+        litLines.add(`${gc.src}|${gc.dst}`);
+        litSlots.add(gc.dst);
+        if (gc.group) litLetters.add(gc.group);
+      }
+      return;
+    }
+    // The feeder this team actually played in (winner-feeders, or loser for 3rd place).
+    const f = m.feeders.find((fn) => {
+      const fm = matchByNum.get(fn);
+      return fm && (fm.home.team === team || fm.away.team === team);
+    });
+    if (f != null) {
+      litLines.add(`match:${f}|match:${num}`);
+      traceTeam(f, team);
+    }
+  };
 
   if (selected?.kind === "group") {
     litLetters.add(selected.id);
@@ -91,22 +123,11 @@ export function BracketView({
         litMatches.add(keyNum(c.dst));
       }
   } else if (selected?.kind === "match") {
-    // Walk backwards through feeders to the group stage.
-    const path = new Set<number>([selected.id]);
-    const stack = [selected.id];
-    while (stack.length) {
-      const n = stack.pop()!;
-      for (const f of feedersMap.get(n) ?? []) if (!path.has(f)) (path.add(f), stack.push(f));
-    }
-    path.forEach((n) => litMatches.add(n));
-    for (const c of connections) {
-      if (path.has(keyNum(c.dst))) {
-        litLines.add(`${c.src}|${c.dst}`);
-        if (c.kind === "group") {
-          litSlots.add(c.dst);
-          if (c.group) litLetters.add(c.group);
-        }
-      }
+    // Trace exactly the two teams in this match, each as one continuous path.
+    const m = matchByNum.get(selected.id);
+    if (m) {
+      traceTeam(m.num, m.home.team);
+      traceTeam(m.num, m.away.team);
     }
   }
 
@@ -154,6 +175,8 @@ export function BracketView({
   }, [recompute]);
 
   const active = !!selected;
+  const selectMatch = (num: number) =>
+    setSelected(selected?.kind === "match" && selected.id === num ? null : { kind: "match", id: num });
 
   return (
     <div className="space-y-4">
@@ -247,46 +270,54 @@ export function BracketView({
           {/* extra room so the group → R32 flow lines are readable */}
           <div className="w-24 shrink-0" aria-hidden />
 
-          {/* Knockout columns */}
-          {treeRounds.map((r) => (
-            <div key={r.round} className="relative z-10 flex flex-col">
-              <div className="text-xs uppercase tracking-wider text-blue-bright font-semibold mb-2">
-                {r.round}
-                <span className="text-muted font-normal"> · {r.matches.length}</span>
-              </div>
-              <div className="flex flex-col justify-around flex-1 gap-3">
-                {r.matches.map((m) => (
-                  <MatchCard
-                    key={m.num}
-                    m={m}
-                    round={r.round}
-                    reg={reg}
-                    litSlots={litSlots}
-                    lit={litMatches.has(m.num)}
-                    onSelect={() => setSelected(selected?.kind === "match" && selected.id === m.num ? null : { kind: "match", id: m.num })}
-                  />
-                ))}
-              </div>
-              {r.round === "Final" && thirdPlace && (
-                <div className="mt-4">
-                  <div className="text-[11px] uppercase tracking-wider text-de-gold font-semibold mb-1.5">
-                    3rd-place playoff
-                  </div>
-                  {thirdPlace.matches.map((m) => (
+          {/* Knockout columns (with the 3rd-place game tucked between the two semis) */}
+          {treeRounds.flatMap((r) => {
+            const col = (
+              <div key={r.round} className="relative z-10 flex flex-col">
+                <div className="text-xs uppercase tracking-wider text-blue-bright font-semibold mb-2">
+                  {r.round}
+                  <span className="text-muted font-normal"> · {r.matches.length}</span>
+                </div>
+                <div className="flex flex-col justify-around flex-1 gap-3">
+                  {r.matches.map((m) => (
                     <MatchCard
                       key={m.num}
                       m={m}
-                      round={m.round}
+                      round={r.round}
                       reg={reg}
                       litSlots={litSlots}
                       lit={litMatches.has(m.num)}
-                      onSelect={() => setSelected(selected?.kind === "match" && selected.id === m.num ? null : { kind: "match", id: m.num })}
+                      onSelect={() => selectMatch(m.num)}
                     />
                   ))}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+            if (r.round === "Semi-final" && thirdPlace) {
+              return [
+                col,
+                <div key="third" className="relative z-10 flex flex-col">
+                  <div className="text-xs uppercase tracking-wider text-de-gold font-semibold mb-2">
+                    3rd place
+                  </div>
+                  <div className="flex flex-col justify-center flex-1">
+                    {thirdPlace.matches.map((m) => (
+                      <MatchCard
+                        key={m.num}
+                        m={m}
+                        round={m.round}
+                        reg={reg}
+                        litSlots={litSlots}
+                        lit={litMatches.has(m.num)}
+                        onSelect={() => selectMatch(m.num)}
+                      />
+                    ))}
+                  </div>
+                </div>,
+              ];
+            }
+            return [col];
+          })}
         </div>
       </div>
     </div>
