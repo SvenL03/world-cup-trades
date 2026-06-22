@@ -36,21 +36,14 @@ export default async function RankingsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Teams" value={data.all.length} />
             <Stat
-              label="Results (played)"
+              label="Draw rate (played)"
+              tone="gold"
               value={
-                data.matchesPlayed === 0 ? (
-                  "—"
-                ) : (
-                  <span className="text-base">
-                    <span className="text-win">{Math.round((data.results.homeWin / data.matchesPlayed) * 100)}% W</span>
-                    {" · "}
-                    <span className="text-de-gold">{Math.round((data.results.draw / data.matchesPlayed) * 100)}% D</span>
-                    {" · "}
-                    <span className="text-loss">{Math.round((data.results.awayWin / data.matchesPlayed) * 100)}% L</span>
-                  </span>
-                )
+                data.matchesPlayed === 0
+                  ? "—"
+                  : `${Math.round((data.results.draw / data.matchesPlayed) * 100)}%`
               }
-              sub="home win · draw · away win"
+              sub={`${data.results.draw} of ${data.matchesPlayed} games drawn`}
             />
             <Stat label="Matches played" value={data.matchesPlayed} tone="gold" />
             <Stat

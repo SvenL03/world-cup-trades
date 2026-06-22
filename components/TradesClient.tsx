@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { Flag } from "./Flag";
 import { Stat } from "./GlowCard";
 import { TradeEditModal } from "./TradeEditModal";
-import { totals, usd, cents } from "@/lib/pl";
+import { totals, usd, cents, estCommission } from "@/lib/pl";
 import type { TradeWithPL } from "@/lib/types";
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json());
@@ -102,6 +102,13 @@ export function TradesClient({
   // Settled record/realized: independent of the status filter.
   const record = useMemo(() => totals(scopedNoStatus), [scopedNoStatus]);
   const favCount = useMemo(() => trades.filter((t) => t.favorite).length, [trades]);
+
+  const [gold, setGold] = useState(false);
+  // Estimated Robinhood commission paid (entry side) across every position taken.
+  const fees = useMemo(
+    () => trades.reduce((a, t) => a + estCommission(t.buyPrice, t.shares, gold), 0),
+    [trades, gold],
+  );
 
   async function refreshPrices() {
     setRefreshing(true);
@@ -298,12 +305,48 @@ export function TradesClient({
         />
       </div>
 
-      {/* Projections */}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="Total cost (at risk)" value={usd(sums.totalCost)} sub={`${sums.count} positions`} />
-        <Stat label="Payout if all win" value={usd(sums.totalPayout)} tone="gold" />
+      {/* Projections + fees */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Stat
+          label="Cost → Payout (if all win)"
+          value={`${usd(sums.totalCost)} → ${usd(sums.totalPayout)}`}
+          sub={`${sums.open} open · projected profit ${usd(sums.totalProjectedProfit)}`}
+        />
         <Stat label="Projected profit" value={usd(sums.totalProjectedProfit)} tone="win" />
+        <Stat
+          label="Est. fees paid"
+          value={usd(fees)}
+          tone="loss"
+          sub={
+            <button onClick={() => setGold((g) => !g)} className="underline hover:text-foreground">
+              {gold ? "Robinhood Gold (5%)" : "No Gold (10%)"} — switch
+            </button>
+          }
+        />
       </div>
+
+      {/* Fees explainer */}
+      <details className="rounded-xl glow-edge-soft bg-surface text-sm">
+        <summary className="px-4 py-3 cursor-pointer text-muted hover:text-foreground">
+          <span className="text-blue-bright">ⓘ</span> How Robinhood event-contract fees work (and this estimate)
+        </summary>
+        <div className="px-4 pb-4 pt-0 text-muted space-y-2 leading-relaxed">
+          <p>
+            Since June 1, 2026 Robinhood charges a probability-weighted commission per side:
+            <span className="text-foreground"> commission = k × price × (1 − price) × contracts</span>,
+            rounded up to the cent — where <span className="text-foreground">k = 10%</span> without
+            Robinhood Gold or <span className="text-foreground">5%</span> with Gold ($5/mo). Fees are
+            highest near 50¢ and tiny near 1¢/99¢.
+          </p>
+          <p>
+            A separate <span className="text-foreground">exchange fee (~$0.02/contract per side)</span>{" "}
+            may also apply and isn&apos;t included here. This estimate counts the{" "}
+            <span className="text-foreground">entry commission</span> on every position; if you sold
+            before a game settled, you&apos;d pay a second (exit-side) commission too. So treat{" "}
+            <span className="text-foreground">{usd(fees)}</span> as a floor.
+          </p>
+        </div>
+      </details>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">

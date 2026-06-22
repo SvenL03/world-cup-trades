@@ -94,6 +94,18 @@ export function totals(trades: TradeWithPL[]): PortfolioTotals {
   return t;
 }
 
+/**
+ * Estimated Robinhood commission for one trade side (effective June 1, 2026):
+ *   commission = k × price × (1 − price) × contracts, rounded up to the cent,
+ * where k = 10% (no Gold) or 5% (Gold). A separate exchange fee may also apply.
+ */
+export function estCommission(price: number, contracts: number, gold: boolean): number {
+  if (contracts <= 0) return 0;
+  const k = gold ? 0.05 : 0.1;
+  const raw = k * price * (1 - price) * contracts;
+  return Math.ceil(raw * 100) / 100;
+}
+
 export const usd = (n: number | null | undefined): string =>
   n == null
     ? "—"
