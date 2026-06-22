@@ -103,12 +103,18 @@ export function TradesClient({
   const record = useMemo(() => totals(scopedNoStatus), [scopedNoStatus]);
   const favCount = useMemo(() => trades.filter((t) => t.favorite).length, [trades]);
 
-  const [gold, setGold] = useState(false);
-  // Estimated Robinhood commission paid (entry side) across every position taken.
-  const fees = useMemo(
-    () => trades.reduce((a, t) => a + estCommission(t.buyPrice, t.shares, gold), 0),
-    [trades, gold],
-  );
+  // Estimated fees (entry side) across every position taken. Commission uses the
+  // Gold rate (5%); exchange fee is ~$0.02 per contract per side.
+  const { commission, exchange, feesTotal } = useMemo(() => {
+    let commission = 0;
+    let exchange = 0;
+    for (const t of trades) {
+      if (t.shares <= 0) continue;
+      commission += estCommission(t.buyPrice, t.shares, true);
+      exchange += t.shares * 0.02;
+    }
+    return { commission, exchange, feesTotal: commission + exchange };
+  }, [trades]);
 
   async function refreshPrices() {
     setRefreshing(true);
@@ -315,13 +321,9 @@ export function TradesClient({
         <Stat label="Projected profit" value={usd(sums.totalProjectedProfit)} tone="win" />
         <Stat
           label="Est. fees paid"
-          value={usd(fees)}
+          value={usd(feesTotal)}
           tone="loss"
-          sub={
-            <button onClick={() => setGold((g) => !g)} className="underline hover:text-foreground">
-              {gold ? "Robinhood Gold (5%)" : "No Gold (10%)"} — switch
-            </button>
-          }
+          sub={`${usd(commission)} commission + ${usd(exchange)} exchange`}
         />
       </div>
 
@@ -332,18 +334,21 @@ export function TradesClient({
         </summary>
         <div className="px-4 pb-4 pt-0 text-muted space-y-2 leading-relaxed">
           <p>
-            Since June 1, 2026 Robinhood charges a probability-weighted commission per side:
-            <span className="text-foreground"> commission = k × price × (1 − price) × contracts</span>,
-            rounded up to the cent — where <span className="text-foreground">k = 10%</span> without
-            Robinhood Gold or <span className="text-foreground">5%</span> with Gold ($5/mo). Fees are
-            highest near 50¢ and tiny near 1¢/99¢.
+            <span className="text-foreground">Commission</span> ({usd(commission)}): since June 1, 2026
+            Robinhood charges a probability-weighted commission per side —
+            <span className="text-foreground"> 5% × price × (1 − price) × contracts</span>, rounded up
+            to the cent (the 5% Gold rate, applied here). It&apos;s highest near 50¢ and tiny near
+            1¢/99¢.
           </p>
           <p>
-            A separate <span className="text-foreground">exchange fee (~$0.02/contract per side)</span>{" "}
-            may also apply and isn&apos;t included here. This estimate counts the{" "}
-            <span className="text-foreground">entry commission</span> on every position; if you sold
-            before a game settled, you&apos;d pay a second (exit-side) commission too. So treat{" "}
-            <span className="text-foreground">{usd(fees)}</span> as a floor.
+            <span className="text-foreground">Exchange fee</span> ({usd(exchange)}): a separate
+            ~<span className="text-foreground">$0.02 per contract</span>, per side, charged by the
+            exchange (Rothera/Kalshi).
+          </p>
+          <p>
+            Both count the <span className="text-foreground">entry side</span> of each position
+            (total <span className="text-foreground">{usd(feesTotal)}</span>). If you sold before a
+            game settled you&apos;d pay a second exit-side set too, so treat this as a floor.
           </p>
         </div>
       </details>
