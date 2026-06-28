@@ -518,6 +518,17 @@ function MatchCard({
     >
       <SlotRow slot={m.home} side="home" num={m.num} winner={homeWins} showOrigin={showOrigin} reg={reg} litSlots={litSlots} goals={m.score ? m.score[0] : null} />
       <SlotRow slot={m.away} side="away" num={m.num} winner={awayWins} showOrigin={showOrigin} reg={reg} litSlots={litSlots} goals={m.score ? m.score[1] : null} />
+      {m.odds && !m.decided && (
+        <div className="px-2 pt-1.5 pb-1">
+          <div className="flex items-center gap-1 text-[10px] text-muted/80">
+            <span className="font-semibold text-foreground tabular-nums">{m.odds[0]}%</span>
+            <div className="flex-1 h-1 rounded-full bg-surface-2 overflow-hidden">
+              <div className="h-full rounded-full bg-blue-bright/60" style={{ width: `${m.odds[0]}%` }} />
+            </div>
+            <span className="font-semibold text-foreground tabular-nums">{m.odds[1]}%</span>
+          </div>
+        </div>
+      )}
       <div className="px-2 py-1 text-[10px] text-muted/70 flex items-center justify-between">
         <span>{formatET(m.date, m.time)}</span>
         <span className={m.decided ? "text-win" : ""}>{m.decided ? "final" : "projected"}</span>

@@ -8,6 +8,28 @@ import type {
   TeamRow,
 } from "./types";
 
+/**
+ * Polymarket-derived win probabilities for each R32 match (home%, away%).
+ * Sourced June 28 2026. Undecided matches only; played results are shown as score.
+ */
+const MATCH_ODDS: Record<number, [number, number]> = {
+  74: [82, 18],  // Germany vs Paraguay
+  75: [72, 28],  // Netherlands vs Morocco
+  76: [78, 22],  // Brazil vs Japan
+  77: [76, 24],  // France vs Sweden
+  78: [42, 58],  // Ivory Coast vs Norway
+  79: [54, 46],  // Mexico vs Ecuador
+  80: [87, 13],  // England vs DR Congo
+  81: [64, 36],  // USA vs Bosnia & Herzegovina
+  82: [66, 34],  // Belgium vs Senegal
+  83: [60, 40],  // Portugal vs Croatia
+  84: [73, 27],  // Spain vs Austria
+  85: [63, 37],  // Switzerland vs Algeria
+  86: [91, 9],   // Argentina vs Cape Verde
+  87: [70, 30],  // Colombia vs Ghana
+  88: [56, 44],  // Australia vs Egypt
+};
+
 const ROUND_ORDER: BracketRound[] = [
   "Round of 32",
   "Round of 16",
@@ -142,6 +164,7 @@ export function buildBracket(standings: StandingsResult): Bracket {
       winner,
       decided,
       feeders: feedersOf(k),
+      odds: MATCH_ODDS[k.num],
     };
   });
 

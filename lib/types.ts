@@ -108,6 +108,8 @@ export interface BracketMatch {
   decided: boolean;
   /** Match numbers whose winners feed this match (empty for Round of 32). */
   feeders: number[];
+  /** Betting win probability [home, away] as 0..100 integers, if available. */
+  odds?: [number, number];
 }
 
 export interface Bracket {
